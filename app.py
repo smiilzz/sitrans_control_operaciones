@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import re  # Importamos Regex para buscar patrones de texto exactos
 
 st.set_page_config(page_title="Sitrans Logistics Hub", layout="wide", page_icon="🚢")
 
@@ -21,40 +22,59 @@ st.title("🚢 Hub de Gestión Reefers - Sitrans")
 # --- FUNCIONES DE INGENIERÍA ---
 
 def extraer_metadatos(file):
-    """Busca Nave, Rotación y Fecha en las primeras filas del Excel."""
-    metadatos = {"Nave": "No encontrada", "Rotación": "-", "Fecha": "-"}
+    """
+    Escanea las primeras filas buscando patrones inteligentes
+    para Nave, Rotación y Fecha, sin importar si están en celdas combinadas.
+    """
+    metadatos = {"Nave": "---", "Rotación": "---", "Fecha": "---"}
     try:
-        # Leemos solo las primeras 10 filas para no cargar todo el archivo
-        df_head = pd.read_excel(file, header=None, nrows=10)
+        # Leemos las primeras 15 filas como texto puro
+        df_head = pd.read_excel(file, header=None, nrows=15)
         
-        # Convertimos todo a texto para buscar fácil
-        texto_completo = df_head.astype(str).apply(lambda x: ' '.join(x), axis=1)
-
-        # Buscamos fila por fila
+        # Estrategia 1: Búsqueda por Texto Completo (Regex)
+        # Convertimos todo el bloque de celdas a un solo texto gigante para buscar patrones
+        texto_completo = " ".join(df_head.astype(str).stack().tolist()).upper()
+        
+        # Buscar FECHA (DD/MM/AAAA o DD-MM-AAAA)
+        match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto_completo)
+        if match_fecha:
+            metadatos["Fecha"] = match_fecha.group(1)
+            
+        # Estrategia 2: Búsqueda Fila por Fila (Para Nave y Rotación)
         for i, row in df_head.iterrows():
-            fila_txt = " ".join([str(x) for x in row if pd.notna(x)]).upper()
+            # Convertimos la fila a lista de strings limpios
+            fila = [str(x).strip().upper() for x in row if pd.notna(x) and str(x).strip() != ""]
             
-            # Lógica simple de búsqueda (ajusta según tu reporte real)
-            if "NAVE" in fila_txt:
-                # Intenta buscar el valor en la celda siguiente a la palabra "Nave"
-                for j, val in enumerate(row):
-                    if isinstance(val, str) and "NAVE" in val.upper():
-                        if j + 1 < len(row): metadatos["Nave"] = str(row[j+1])
+            for j, val in enumerate(fila):
+                # Lógica para NAVE
+                if "NAVE" in val:
+                    # Caso A: "NAVE: MAERSK" (Todo en la misma celda)
+                    if ":" in val and len(val.split(":")) > 1:
+                        posible_valor = val.split(":")[1].strip()
+                        if len(posible_valor) > 2: # Evitar capturar basura
+                            metadatos["Nave"] = posible_valor
+                            break
+                    # Caso B: Celda 1="NAVE", Celda 2="MAERSK" (Celdas separadas)
+                    elif j + 1 < len(fila):
+                        metadatos["Nave"] = fila[j+1]
                         break
-            
-            if "VIAJE" in fila_txt or "ROTACIÓN" in fila_txt or "ROTACION" in fila_txt:
-                for j, val in enumerate(row):
-                    if isinstance(val, str) and ("ROTACION" in val.upper() or "ROTACIÓN" in val.upper()):
-                        if j + 1 < len(row): metadatos["Rotación"] = str(row[j+1])
-                        break
-            
-            if "FECHA" in fila_txt:
-                 # A veces la fecha está en la misma celda tipo "Fecha: 20/01/2026"
-                 metadatos["Fecha"] = fila_txt.replace("FECHA", "").replace(":", "").strip()[:10]
 
-        file.seek(0) # IMPORTANTE: Rebobinar el archivo para leerlo después
+                # Lógica para ROTACIÓN / VIAJE
+                if "ROTACION" in val or "ROTACIÓN" in val or "VIAJE" in val:
+                    # Caso A: "ROTACION: 12345" (Misma celda)
+                    if ":" in val and len(val.split(":")) > 1:
+                        metadatos["Rotación"] = val.split(":")[1].strip()
+                        break
+                    # Caso B: Celdas separadas
+                    elif j + 1 < len(fila):
+                        metadatos["Rotación"] = fila[j+1]
+                        break
+        
+        file.seek(0)
         return metadatos
-    except:
+    except Exception as e:
+        # Si falla algo, devolvemos vacíos pero no rompemos la app
+        print(f"Debug Info - Error Metadatos: {e}")
         file.seek(0)
         return metadatos
 
@@ -80,7 +100,7 @@ def cargar_excel_detectando_header(file, palabra_clave):
                 return df
         return None
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error cargando datos: {e}")
         return None
 
 # --- INTERFAZ LATERAL ---
@@ -90,16 +110,16 @@ file_mon = st.sidebar.file_uploader("📂 2_Monitor (Unidad)", type=["xlsx"])
 
 # --- LÓGICA PRINCIPAL ---
 if file_rep and file_mon:
-    # 1. Extraer Metadatos ANTES de procesar
+    # 1. Extraer Metadatos (Versión Mejorada)
     meta = extraer_metadatos(file_rep)
     
-    # Mostrar encabezado con datos del viaje
+    # Header Informativo
     c1, c2, c3 = st.columns(3)
-    c1.info(f"📅 **Fecha:** {meta.get('Fecha', '-')}")
-    c2.info(f"🚢 **Nave:** {meta.get('Nave', '-')}")
-    c3.info(f"🔄 **Rotación:** {meta.get('Rotación', '-')}")
+    c1.info(f"📅 **Fecha Consulta:** {meta.get('Fecha', '---')}")
+    c2.info(f"🚢 **Nave:** {meta.get('Nave', '---')}")
+    c3.info(f"🔄 **Rotación:** {meta.get('Rotación', '---')}")
 
-    with st.spinner('Procesando...'):
+    with st.spinner('Procesando lógica de negocio (Normal vs CT)...'):
         df_rep = cargar_excel_detectando_header(file_rep, "CONTENEDOR")
         df_mon = cargar_excel_detectando_header(file_mon, "UNIDAD")
 
@@ -127,13 +147,15 @@ if file_rep and file_mon:
                 cant_normal = len(df_final)
                 df_final['TIPO_REEFER'] = 'NORMAL'
 
-            # Métricas de Resumen
+            # Métricas
             st.divider()
             k1, k2, k3 = st.columns(3)
             k1.metric("Total Contenedores", len(df_final))
             k2.metric("Reefers Normales", int(cant_normal))
             k3.metric("Reefers CT (Controlados)", int(cant_ct), delta_color="inverse")
 
+            # Tabla
+            st.subheader("Detalle Clasificado")
             st.dataframe(df_final, use_container_width=True)
 
             # Descarga
@@ -144,4 +166,4 @@ if file_rep and file_mon:
             st.download_button("📥 Descargar Excel Consolidado", buffer.getvalue(), "Reporte_Sitrans.xlsx")
 
 else:
-    st.info("Sube los archivos para ver la información de la Nave y el detalle de carga.")
+    st.info("Sube los archivos para ver la información.")
