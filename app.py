@@ -2,34 +2,68 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Configuración de la página
 st.set_page_config(page_title="Sitrans Logistics Hub", layout="wide", page_icon="🚢")
 
-# Estilos personalizados
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
     .stMetric {
         background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚢 Hub de Gestión Reefers - Sitrans")
-st.info("Sube los reportes de Navis N4 para clasificar Contenedores Normales vs CT.")
 
 # --- FUNCIONES DE INGENIERÍA ---
+
+def extraer_metadatos(file):
+    """Busca Nave, Rotación y Fecha en las primeras filas del Excel."""
+    metadatos = {"Nave": "No encontrada", "Rotación": "-", "Fecha": "-"}
+    try:
+        # Leemos solo las primeras 10 filas para no cargar todo el archivo
+        df_head = pd.read_excel(file, header=None, nrows=10)
+        
+        # Convertimos todo a texto para buscar fácil
+        texto_completo = df_head.astype(str).apply(lambda x: ' '.join(x), axis=1)
+
+        # Buscamos fila por fila
+        for i, row in df_head.iterrows():
+            fila_txt = " ".join([str(x) for x in row if pd.notna(x)]).upper()
+            
+            # Lógica simple de búsqueda (ajusta según tu reporte real)
+            if "NAVE" in fila_txt:
+                # Intenta buscar el valor en la celda siguiente a la palabra "Nave"
+                for j, val in enumerate(row):
+                    if isinstance(val, str) and "NAVE" in val.upper():
+                        if j + 1 < len(row): metadatos["Nave"] = str(row[j+1])
+                        break
+            
+            if "VIAJE" in fila_txt or "ROTACIÓN" in fila_txt or "ROTACION" in fila_txt:
+                for j, val in enumerate(row):
+                    if isinstance(val, str) and ("ROTACION" in val.upper() or "ROTACIÓN" in val.upper()):
+                        if j + 1 < len(row): metadatos["Rotación"] = str(row[j+1])
+                        break
+            
+            if "FECHA" in fila_txt:
+                 # A veces la fecha está en la misma celda tipo "Fecha: 20/01/2026"
+                 metadatos["Fecha"] = fila_txt.replace("FECHA", "").replace(":", "").strip()[:10]
+
+        file.seek(0) # IMPORTANTE: Rebobinar el archivo para leerlo después
+        return metadatos
+    except:
+        file.seek(0)
+        return metadatos
 
 def desduplicar_columnas(df):
     cols = pd.Series(df.columns)
     for i, col in enumerate(df.columns):
         if (cols == col).sum() > 1:
             count = (cols[:i] == col).sum()
-            if count > 0:
-                cols[i] = f"{col}.{count}"
+            if count > 0: cols[i] = f"{col}.{count}"
     df.columns = cols
     return df
 
@@ -46,81 +80,68 @@ def cargar_excel_detectando_header(file, palabra_clave):
                 return df
         return None
     except Exception as e:
-        st.error(f"Error leyendo archivo: {e}")
+        st.error(f"Error: {e}")
         return None
 
 # --- INTERFAZ LATERAL ---
-st.sidebar.image("https://www.sitrans.cl/wp-content/themes/sitrans-child/img/logo-sitrans.png", width=150)
 st.sidebar.header("Carga de Documentos")
-
 file_rep = st.sidebar.file_uploader("📂 1_Reporte (Contenedor)", type=["xls", "xlsx"])
 file_mon = st.sidebar.file_uploader("📂 2_Monitor (Unidad)", type=["xlsx"])
 
 # --- LÓGICA PRINCIPAL ---
-
 if file_rep and file_mon:
-    with st.spinner('Procesando lógica de negocio (Normal vs CT)...'):
+    # 1. Extraer Metadatos ANTES de procesar
+    meta = extraer_metadatos(file_rep)
+    
+    # Mostrar encabezado con datos del viaje
+    c1, c2, c3 = st.columns(3)
+    c1.info(f"📅 **Fecha:** {meta.get('Fecha', '-')}")
+    c2.info(f"🚢 **Nave:** {meta.get('Nave', '-')}")
+    c3.info(f"🔄 **Rotación:** {meta.get('Rotación', '-')}")
+
+    with st.spinner('Procesando...'):
         df_rep = cargar_excel_detectando_header(file_rep, "CONTENEDOR")
         df_mon = cargar_excel_detectando_header(file_mon, "UNIDAD")
 
         if df_rep is not None and df_mon is not None:
-            # 1. LIMPIEZA DE FILAS FANTASMA
+            # Limpieza
             df_rep = df_rep[df_rep['CONTENEDOR'].notna()]
             df_rep = df_rep[df_rep['CONTENEDOR'].astype(str).str.strip() != ""]
             df_rep = df_rep[~df_rep['CONTENEDOR'].astype(str).str.contains("Total", case=False, na=False)]
 
-            # 2. CRUCE DE DATOS
+            # Cruce
             df_final = pd.merge(df_rep, df_mon, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
             df_final = df_final.loc[:, ~df_final.columns.str.contains('^UNNAMED')]
 
-            # 3. LÓGICA DE CLASIFICACIÓN (NORMAL vs CT)
-            # Buscamos específicamente estas 4 columnas
+            # Lógica Normal vs CT
             cols_ct_target = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
-            
-            # Verificamos cuáles de esas columnas existen realmente en el archivo subido
             cols_ct_presentes = [c for c in df_final.columns if c in cols_ct_target]
 
             if cols_ct_presentes:
-                # Un contenedor es CT si tiene valor (no vacío) en CUALQUIERA de los sensores encontrados
-                # axis=1 significa que revisamos fila por fila
                 es_ct = df_final[cols_ct_presentes].notna().any(axis=1)
-                
-                # Contamos
                 cant_ct = es_ct.sum()
                 cant_normal = len(df_final) - cant_ct
-                
-                # (Opcional) Marcamos en el Excel qué tipo es cada uno
                 df_final['TIPO_REEFER'] = es_ct.apply(lambda x: 'CT' if x else 'NORMAL')
             else:
-                # Si no existen las columnas de sensores, asumimos todos Normales (o faltan datos)
                 cant_ct = 0
                 cant_normal = len(df_final)
                 df_final['TIPO_REEFER'] = 'NORMAL'
 
-            st.success("✅ Clasificación completada")
+            # Métricas de Resumen
+            st.divider()
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Total Contenedores", len(df_final))
+            k2.metric("Reefers Normales", int(cant_normal))
+            k3.metric("Reefers CT (Controlados)", int(cant_ct), delta_color="inverse")
 
-            # 4. MÉTRICAS SOLICITADAS
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Contenedores Totales", len(df_final))
-            m2.metric("Contenedores Normales", int(cant_normal))
-            m3.metric("Contenedores CT", int(cant_ct)) # Se pone en rojo si es alto, verde si bajo, etc.
-
-            # Mostrar Tabla
-            st.subheader("Detalle de Unidades")
             st.dataframe(df_final, use_container_width=True)
 
-            # Botón de Descarga
+            # Descarga
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_final.to_excel(writer, index=False, sheet_name='Consolidado_Clasificado')
+                df_final.to_excel(writer, index=False)
             
-            st.download_button(
-                label="📥 Descargar Reporte Clasificado (Excel)",
-                data=buffer.getvalue(),
-                file_name="Reporte_Sitrans_Normal_vs_CT.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.error("Error: No se encontraron las columnas clave 'CONTENEDOR' o 'UNIDAD'.")
+            st.download_button("📥 Descargar Excel Consolidado", buffer.getvalue(), "Reporte_Sitrans.xlsx")
+
 else:
-    st.info("Esperando archivos...")
+    st.info("Sube los archivos para ver la información de la Nave y el detalle de carga.")
