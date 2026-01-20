@@ -3,6 +3,7 @@ import pandas as pd
 import io
 import re
 import numpy as np
+import plotly.express as px # Importamos Plotly para los gráficos
 
 # Configuración de página
 st.set_page_config(page_title="Sitrans Dashboard", layout="wide", page_icon="🚢")
@@ -17,6 +18,11 @@ st.markdown("""
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
+    /* Estilo para las métricas grandes de KPI */
+    .big-font {
+        font-size: 24px !important;
+        font-weight: bold;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -24,35 +30,30 @@ st.title("🚢 Control de Operaciones - Sitrans")
 
 # --- FUNCIONES DE SOPORTE ---
 def formatear_duracion(minutos):
-    """Convierte minutos float (Ej: 90.5) a formato HH:MM:SS (Ej: 1:30:30)"""
-    if pd.isna(minutos) or minutos == 0:
-        return ""
-    segundos_totales = int(minutos * 60)
-    horas = segundos_totales // 3600
-    resto = segundos_totales % 3600
-    mins = resto // 60
-    secs = resto % 60
-    return f"{horas}:{mins:02d}:{secs:02d}"
+    """Convierte minutos float a HH:MM:SS"""
+    if pd.isna(minutos) or minutos == 0: return ""
+    segundos = int(minutos * 60)
+    return f"{segundos//3600}:{(segundos%3600)//60:02d}:{segundos%60:02d}"
 
 def extraer_metadatos(file):
     metadatos = {"Nave": "---", "Rotación": "---", "Fecha": "---"}
     try:
         df_head = pd.read_excel(file, header=None, nrows=20)
-        texto_completo = " ".join(df_head.astype(str).stack().tolist()).upper()
+        texto = " ".join(df_head.astype(str).stack().tolist()).upper()
         
-        match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto_completo)
+        match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto)
         if match_fecha: metadatos["Fecha"] = match_fecha.group(1)
         else:
-            match_solo_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto_completo)
-            if match_solo_fecha: metadatos["Fecha"] = match_solo_fecha.group(1)
+            match_solo = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto)
+            if match_solo: metadatos["Fecha"] = match_solo.group(1)
 
         for i, row in df_head.iterrows():
-            fila = [str(x).strip().upper() for x in row if pd.notna(x) and str(x).strip() != ""]
+            fila = [str(x).strip().upper() for x in row if pd.notna(x)]
             for j, val in enumerate(fila):
                 if "NAVE" in val:
                     if ":" in val and len(val.split(":")) > 1: metadatos["Nave"] = val.split(":")[1].strip()
                     elif j+1 < len(fila): metadatos["Nave"] = fila[j+1]
-                if any(x in val for x in ["ROTACION", "ROTACIÓN", "VIAJE", "VOY"]):
+                if any(x in val for x in ["ROTACION", "ROTACIÓN", "VIAJE"]):
                     if ":" in val and len(val.split(":")) > 1: metadatos["Rotación"] = val.split(":")[1].strip()
                     elif j+1 < len(fila): metadatos["Rotación"] = fila[j+1]
         file.seek(0)
@@ -74,8 +75,8 @@ def cargar_excel(file, palabra_clave):
     try:
         df_temp = pd.read_excel(file, header=None)
         for i, row in df_temp.iterrows():
-            row_values = [str(val).strip().upper() for val in row]
-            if palabra_clave in row_values:
+            vals = [str(v).strip().upper() for v in row]
+            if palabra_clave in vals:
                 file.seek(0)
                 df = pd.read_excel(file, header=i)
                 df.columns = [str(c).strip().upper() for c in df.columns]
@@ -91,7 +92,6 @@ file_mon = st.sidebar.file_uploader("📂 2_Monitor", type=["xlsx"])
 
 if file_rep and file_mon:
     meta = extraer_metadatos(file_rep)
-    
     with st.container():
         c1, c2, c3 = st.columns(3)
         c1.metric("📅 Fecha Consulta", meta.get('Fecha', '---'))
@@ -111,7 +111,7 @@ if file_rep and file_mon:
         # Cruce
         df = pd.merge(df_rep, df_mon, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
         
-        # Clasificación
+        # Clasificación CT vs General
         cols_ct = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
         presentes = [c for c in df.columns if c in cols_ct]
         if presentes:
@@ -119,144 +119,178 @@ if file_rep and file_mon:
         else:
             df['TIPO'] = 'General'
 
-        # --- CÁLCULO DE TIEMPOS ---
+        # Configuración de Procesos
         parejas_calculo = {
             "Conexión": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
             "Desconexión": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
             "OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
         }
 
-        # Hora actual en Chile
+        # Hora Actual Chile
         ahora_chile = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
 
+        # --- BUCLE DE CÁLCULO ---
         for proceso, cols in parejas_calculo.items():
-            col_ini = cols["Ini"]
-            col_fin = cols["Fin"]
+            col_ini, col_fin = cols["Ini"], cols["Fin"]
             
             if col_ini in df.columns and col_fin in df.columns:
                 df[col_ini] = pd.to_datetime(df[col_ini], dayfirst=True, errors='coerce')
                 df[col_fin] = pd.to_datetime(df[col_fin], dayfirst=True, errors='coerce')
                 
-                # Definir Estados
+                # Estados
                 condiciones = [
                     (df[col_ini].notna()) & (df[col_fin].notna()), 
                     (df[col_ini].notna()) & (df[col_fin].isna()),  
                     (df[col_ini].isna())                           
                 ]
-                opciones = ["Finalizado", "Pendiente", "Sin Solicitud"]
-                col_status = f"Estado_{proceso}"
-                df[col_status] = np.select(condiciones, opciones, default="Sin Solicitud")
+                df[f"Estado_{proceso}"] = np.select(condiciones, ["Finalizado", "Pendiente", "Sin Solicitud"], default="Sin Solicitud")
 
-                # --- CÁLCULOS INTERNOS (RAW) PARA KPIS ---
-                # 1. Duración Final (solo para finalizados)
-                col_duracion_final = f"Raw_Duracion_{proceso}"
-                df[col_duracion_final] = np.where(df[col_status] == "Finalizado", 
-                                                  (df[col_fin] - df[col_ini]).dt.total_seconds() / 60, 
-                                                  np.nan)
+                # Minutos Reales (Numerico para cálculo)
+                col_min = f"Min_{proceso}"
+                # A. Finalizado
+                df.loc[df[f"Estado_{proceso}"] == "Finalizado", col_min] = (df[col_fin] - df[col_ini]).dt.total_seconds() / 60
+                # B. Pendiente (En Vivo)
+                df.loc[df[f"Estado_{proceso}"] == "Pendiente", col_min] = (ahora_chile - df[col_ini]).dt.total_seconds() / 60
+                # C. Sin Solicitud
+                df.loc[df[f"Estado_{proceso}"] == "Sin Solicitud", col_min] = 0
 
-                # 2. Tiempo Transcurrido (solo para pendientes)
-                col_transcurrido = f"Raw_Transcurrido_{proceso}"
-                df[col_transcurrido] = np.where(df[col_status] == "Pendiente",
-                                                (ahora_chile - df[col_ini]).dt.total_seconds() / 60,
-                                                0)
+                # Columnas Visuales
+                df[f"Ver_Tiempo_{proceso}"] = np.where(df[f"Estado_{proceso}"] == "Finalizado", df[col_min].apply(formatear_duracion), "")
+                df[f"Ver_Trans_{proceso}"] = np.where(df[f"Estado_{proceso}"] == "Pendiente", df[col_min], 0)
 
-                # --- COLUMNAS VISUALES PARA TABLA (STRING) ---
-                # A. Columna "Tiempo": HH:MM:SS solo si está finalizado
-                col_ver_tiempo = f"Ver_Tiempo_{proceso}"
-                df[col_ver_tiempo] = df[col_duracion_final].apply(formatear_duracion)
-
-                # B. Columna "Minutos Transcurridos": 0 si finalizado, valor si pendiente
-                col_ver_trans = f"Ver_Trans_{proceso}"
-                # Si es finalizado -> 0. Si es pendiente -> valor calculado.
-                df[col_ver_trans] = np.where(df[col_status] == "Finalizado", 
-                                             0, 
-                                             df[col_transcurrido])
-
-            else:
-                st.warning(f"⚠️ Faltan columnas para {proceso}")
-
-        # --- DASHBOARD VISUAL ---
+        # --- VISUALIZACIÓN ---
         tab1, tab2, tab3 = st.tabs(["🔌 Conexión", "🔋 Desconexión", "🚢 OnBoard"])
 
         def render_tab(tab, proceso):
+            col_min = f"Min_{proceso}"
             col_stat = f"Estado_{proceso}"
-            col_raw_dur = f"Raw_Duracion_{proceso}" # Usamos esto para el KPI de promedio
-            
-            # Columnas Visuales
-            col_vis_tiempo = f"Ver_Tiempo_{proceso}"
-            col_vis_trans = f"Ver_Trans_{proceso}"
             
             with tab:
                 if col_stat in df.columns:
-                    # Métricas
-                    conteo = df[col_stat].value_counts()
+                    # 1. PREPARACIÓN DE DATOS KPI
+                    # Filtramos solo lo que tiene actividad (Finalizado o Pendiente)
+                    df_activo = df[df[col_stat].isin(["Finalizado", "Pendiente"])].copy()
                     
-                    k1, k2, k3, k4, k5 = st.columns(5)
-                    k1.metric("Finalizados", conteo.get("Finalizado", 0))
-                    k2.metric("Pendientes", conteo.get("Pendiente", 0), delta="En Vivo", delta_color="off")
-                    k3.metric("Sin Solicitud", conteo.get("Sin Solicitud", 0))
-                    
-                    # KPIs Promedios (Usamos la columna RAW numérica)
-                    df_fin = df[df[col_stat] == "Finalizado"]
-                    prom_gen = df_fin[df_fin['TIPO'] == 'General'][col_raw_dur].mean()
-                    prom_ct = df_fin[df_fin['TIPO'] == 'CT'][col_raw_dur].mean()
-                    
-                    k4.metric("Promedio General", f"{prom_gen:.1f} min" if not pd.isna(prom_gen) else "0 min")
-                    k5.metric("Promedio CT", f"{prom_ct:.1f} min" if not pd.isna(prom_ct) else "0 min")
+                    if not df_activo.empty:
+                        # --- CLASIFICACIÓN SEMÁFORO (0-15, 15-30, >30) ---
+                        cond_semaforo = [
+                            df_activo[col_min] <= 15,
+                            (df_activo[col_min] > 15) & (df_activo[col_min] <= 30),
+                            df_activo[col_min] > 30
+                        ]
+                        df_activo['Semaforo'] = np.select(cond_semaforo, ['Verde', 'Amarillo', 'Rojo'], default='Rojo')
+                        
+                        # --- CLASIFICACIÓN CUMPLIMIENTO (REGLAS DE NEGOCIO) ---
+                        # OnBoard: Todo < 30 min
+                        # Conex/Desconex: CT < 30 min, General < 60 min
+                        if proceso == "OnBoard":
+                            df_activo['Cumple'] = df_activo[col_min] <= 30
+                        else:
+                            cond_cumple = [
+                                (df_activo['TIPO'] == 'CT') & (df_activo[col_min] <= 30),
+                                (df_activo['TIPO'] == 'General') & (df_activo[col_min] <= 60)
+                            ]
+                            df_activo['Cumple'] = np.select(cond_cumple, [True, True], default=False)
+
+                        # --- DASHBOARD SUPERIOR (GRÁFICO + TARJETAS) ---
+                        col_izq, col_der = st.columns([1, 2])
+                        
+                        with col_izq:
+                            # GRÁFICO DONUT
+                            conteos_semaforo = df_activo['Semaforo'].value_counts().reset_index()
+                            conteos_semaforo.columns = ['Color', 'Cantidad']
+                            
+                            # Mapa de colores oficial
+                            color_map = {'Verde': '#2ecc71', 'Amarillo': '#f1c40f', 'Rojo': '#e74c3c'}
+                            
+                            fig = px.pie(conteos_semaforo, values='Cantidad', names='Color', 
+                                         color='Color', color_discrete_map=color_map, hole=0.5)
+                            fig.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=180)
+                            
+                            st.subheader("🚦 Semáforo Tiempos")
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        with col_der:
+                            # TARJETAS DE INDICADORES
+                            pct_cumplimiento = (df_activo['Cumple'].sum() / len(df_activo)) * 100
+                            rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
+                            
+                            # Fila 1: KPI Principal y Alerta
+                            k1, k2 = st.columns(2)
+                            k1.metric("KPI Cumplimiento Global", f"{pct_cumplimiento:.1f}%")
+                            if rojos_ct > 0:
+                                k2.error(f"🚨 {rojos_ct} CT Fuera de Plazo")
+                            else:
+                                k2.success("✅ CTs al día")
+
+                            # Fila 2: Promedios
+                            k3, k4 = st.columns(2)
+                            prom_gen = df_activo[df_activo['TIPO']=='General'][col_min].mean()
+                            prom_ct = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
+                            
+                            k3.metric("Promedio General", f"{prom_gen:.1f} min" if not pd.isna(prom_gen) else "-")
+                            k4.metric("Promedio CT", f"{prom_ct:.1f} min" if not pd.isna(prom_ct) else "-")
+
+                    else:
+                        st.info("No hay operaciones iniciadas para generar gráficos.")
 
                     st.divider()
 
-                    # Filtro
-                    filtro = st.radio(f"Ver estado en {proceso}:", 
-                                      ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], 
-                                      horizontal=True, key=proceso)
+                    # --- TABLA DE DETALLE ---
+                    filtro = st.radio(f"Filtro {proceso}:", ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], horizontal=True, key=proceso)
                     
                     if filtro == "Todos": df_show = df
-                    else: df_show = df[df[col_stat] == filtro]
+                    else: df_show = df[df[f"Estado_{proceso}"] == filtro]
 
-                    # Preparar Tabla Limpia
-                    # 1. Seleccionamos solo lo que pide el usuario
-                    cols_finales = ['CONTENEDOR', 'TIPO', col_vis_tiempo, col_stat, col_vis_trans]
+                    # Preparar columnas
+                    cols_finales = ['CONTENEDOR', 'TIPO', f"Ver_Tiempo_{proceso}", f"Estado_{proceso}", f"Ver_Trans_{proceso}"]
                     df_display = df_show[cols_finales].copy()
-                    
-                    # 2. Renombramos para que se vea igual a la imagen
                     df_display.columns = ['Contenedor', 'Categoría', 'Tiempo', 'Estado', 'Minutos Transcurridos']
+
+                    # --- FORMATEO CONDICIONAL DE COLORES ---
+                    # Usamos el dataframe original 'df' para mirar los valores numéricos
+                    # Requerimos alinear índices. df_display conserva el índice de df_show
                     
-                    # 3. Aplicamos Estilos (Fondo Rojo en Tiempo si demora mucho)
-                    # Usamos col_raw_dur del dataframe original para saber cuáles pintar
-                    # Necesitamos el índice alineado, así que usamos el index de df_show
-                    
-                    def estilo_rojo(row):
-                        # Obtenemos el valor numérico original usando el índice
+                    def colorear_celdas(row):
                         idx = row.name
-                        duracion_real = df.loc[idx, col_raw_dur]
-                        estado = df.loc[idx, col_stat]
+                        # Obtenemos el valor numérico real
+                        minutos_reales = df.loc[idx, col_min]
+                        estado = df.loc[idx, f"Estado_{proceso}"]
                         
                         estilos = [''] * len(row)
                         
-                        # Si está finalizado y demoró más de 60 mins (ajustable), pintar celda Tiempo rojo
-                        if estado == "Finalizado" and pd.notna(duracion_real) and duracion_real > 60:
-                             # La columna 'Tiempo' es la índice 2 (0=Cont, 1=Cat, 2=Tiempo)
-                             estilos[2] = 'background-color: #ff4b4b; color: white; font-weight: bold;'
+                        if estado in ["Finalizado", "Pendiente"] and pd.notna(minutos_reales):
+                            # Definir color de fondo según regla 15/30
+                            bg_color = ""
+                            if minutos_reales <= 15: bg_color = "background-color: #d4edda; color: #155724;" # Verde claro
+                            elif 15 < minutos_reales <= 30: bg_color = "background-color: #fff3cd; color: #856404;" # Amarillo
+                            else: bg_color = "background-color: #f8d7da; color: #721c24; font-weight: bold;" # Rojo
+                            
+                            # Aplicar a columna "Minutos Transcurridos" (índice 4)
+                            estilos[4] = bg_color
+                            
+                            # Si está finalizado, aplicar también a "Tiempo" (índice 2)
+                            if estado == "Finalizado":
+                                estilos[2] = bg_color
                         
                         return estilos
 
                     st.dataframe(
-                        df_display.style.apply(estilo_rojo, axis=1)
-                        .format({"Minutos Transcurridos": "{:.1f}"}), 
+                        df_display.style.apply(colorear_celdas, axis=1)
+                        .format({"Minutos Transcurridos": "{:.1f}"}),
                         use_container_width=True
                     )
-
+        
         render_tab(tab1, "Conexión")
         render_tab(tab2, "Desconexión")
         render_tab(tab3, "OnBoard")
 
+        # Descarga
         st.divider()
-        # Descarga del Excel (con los datos crudos para que puedan trabajar)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         st.download_button("📥 Descargar Reporte Full", buffer.getvalue(), "Sitrans_Reporte.xlsx")
 
 else:
-    st.info("👋 Sube los archivos para comenzar.")
+    st.info("👋 Sube los archivos para ver el Dashboard.")
