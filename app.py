@@ -23,6 +23,17 @@ st.markdown("""
 st.title("🚢 Control de Operaciones - Sitrans")
 
 # --- FUNCIONES DE SOPORTE ---
+def formatear_duracion(minutos):
+    """Convierte minutos float (Ej: 90.5) a formato HH:MM:SS (Ej: 1:30:30)"""
+    if pd.isna(minutos) or minutos == 0:
+        return ""
+    segundos_totales = int(minutos * 60)
+    horas = segundos_totales // 3600
+    resto = segundos_totales % 3600
+    mins = resto // 60
+    secs = resto % 60
+    return f"{horas}:{mins:02d}:{secs:02d}"
+
 def extraer_metadatos(file):
     metadatos = {"Nave": "---", "Rotación": "---", "Fecha": "---"}
     try:
@@ -115,9 +126,7 @@ if file_rep and file_mon:
             "OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
         }
 
-        # --- AQUI ESTÁ EL CAMBIO DE HORA CHILE ---
-        # 1. Obtenemos hora actual en Chile (Santiago)
-        # 2. .tz_localize(None) elimina la info de zona horaria para poder restar con el Excel
+        # Hora actual en Chile
         ahora_chile = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
 
         for proceso, cols in parejas_calculo.items():
@@ -128,7 +137,7 @@ if file_rep and file_mon:
                 df[col_ini] = pd.to_datetime(df[col_ini], dayfirst=True, errors='coerce')
                 df[col_fin] = pd.to_datetime(df[col_fin], dayfirst=True, errors='coerce')
                 
-                # Estados
+                # Definir Estados
                 condiciones = [
                     (df[col_ini].notna()) & (df[col_fin].notna()), 
                     (df[col_ini].notna()) & (df[col_fin].isna()),  
@@ -138,27 +147,44 @@ if file_rep and file_mon:
                 col_status = f"Estado_{proceso}"
                 df[col_status] = np.select(condiciones, opciones, default="Sin Solicitud")
 
-                # Minutos Transcurridos
-                col_min_real = f"Min_Transcurridos_{proceso}"
-                
-                # A. Finalizado: Diferencia entre Fin e Inicio
-                df.loc[df[col_status] == "Finalizado", col_min_real] = (df[col_fin] - df[col_ini]).dt.total_seconds() / 60
-                
-                # B. Pendiente: Diferencia entre AHORA (Chile) e Inicio
-                df.loc[df[col_status] == "Pendiente", col_min_real] = (ahora_chile - df[col_ini]).dt.total_seconds() / 60
-                
-                # C. Sin Solicitud: 0
-                df.loc[df[col_status] == "Sin Solicitud", col_min_real] = 0
+                # --- CÁLCULOS INTERNOS (RAW) PARA KPIS ---
+                # 1. Duración Final (solo para finalizados)
+                col_duracion_final = f"Raw_Duracion_{proceso}"
+                df[col_duracion_final] = np.where(df[col_status] == "Finalizado", 
+                                                  (df[col_fin] - df[col_ini]).dt.total_seconds() / 60, 
+                                                  np.nan)
+
+                # 2. Tiempo Transcurrido (solo para pendientes)
+                col_transcurrido = f"Raw_Transcurrido_{proceso}"
+                df[col_transcurrido] = np.where(df[col_status] == "Pendiente",
+                                                (ahora_chile - df[col_ini]).dt.total_seconds() / 60,
+                                                0)
+
+                # --- COLUMNAS VISUALES PARA TABLA (STRING) ---
+                # A. Columna "Tiempo": HH:MM:SS solo si está finalizado
+                col_ver_tiempo = f"Ver_Tiempo_{proceso}"
+                df[col_ver_tiempo] = df[col_duracion_final].apply(formatear_duracion)
+
+                # B. Columna "Minutos Transcurridos": 0 si finalizado, valor si pendiente
+                col_ver_trans = f"Ver_Trans_{proceso}"
+                # Si es finalizado -> 0. Si es pendiente -> valor calculado.
+                df[col_ver_trans] = np.where(df[col_status] == "Finalizado", 
+                                             0, 
+                                             df[col_transcurrido])
 
             else:
                 st.warning(f"⚠️ Faltan columnas para {proceso}")
 
-        # --- VISUALIZACIÓN ---
+        # --- DASHBOARD VISUAL ---
         tab1, tab2, tab3 = st.tabs(["🔌 Conexión", "🔋 Desconexión", "🚢 OnBoard"])
 
         def render_tab(tab, proceso):
             col_stat = f"Estado_{proceso}"
-            col_min_real = f"Min_Transcurridos_{proceso}"
+            col_raw_dur = f"Raw_Duracion_{proceso}" # Usamos esto para el KPI de promedio
+            
+            # Columnas Visuales
+            col_vis_tiempo = f"Ver_Tiempo_{proceso}"
+            col_vis_trans = f"Ver_Trans_{proceso}"
             
             with tab:
                 if col_stat in df.columns:
@@ -170,9 +196,10 @@ if file_rep and file_mon:
                     k2.metric("Pendientes", conteo.get("Pendiente", 0), delta="En Vivo", delta_color="off")
                     k3.metric("Sin Solicitud", conteo.get("Sin Solicitud", 0))
                     
+                    # KPIs Promedios (Usamos la columna RAW numérica)
                     df_fin = df[df[col_stat] == "Finalizado"]
-                    prom_gen = df_fin[df_fin['TIPO'] == 'General'][col_min_real].mean()
-                    prom_ct = df_fin[df_fin['TIPO'] == 'CT'][col_min_real].mean()
+                    prom_gen = df_fin[df_fin['TIPO'] == 'General'][col_raw_dur].mean()
+                    prom_ct = df_fin[df_fin['TIPO'] == 'CT'][col_raw_dur].mean()
                     
                     k4.metric("Promedio General", f"{prom_gen:.1f} min" if not pd.isna(prom_gen) else "0 min")
                     k5.metric("Promedio CT", f"{prom_ct:.1f} min" if not pd.isna(prom_ct) else "0 min")
@@ -187,21 +214,36 @@ if file_rep and file_mon:
                     if filtro == "Todos": df_show = df
                     else: df_show = df[df[col_stat] == filtro]
 
-                    # Tabla
-                    cols_base = ['CONTENEDOR', 'TIPO']
-                    parejas = parejas_calculo[proceso]
-                    cols_fechas = [parejas["Ini"], parejas["Fin"]]
-                    cols_finales = cols_base + cols_fechas + [col_stat, col_min_real]
-                    
+                    # Preparar Tabla Limpia
+                    # 1. Seleccionamos solo lo que pide el usuario
+                    cols_finales = ['CONTENEDOR', 'TIPO', col_vis_tiempo, col_stat, col_vis_trans]
                     df_display = df_show[cols_finales].copy()
-                    df_display.rename(columns={col_min_real: "Minutos Transcurridos"}, inplace=True)
                     
-                    # Formato Condicional (Rojo si > 60 min y es positivo)
+                    # 2. Renombramos para que se vea igual a la imagen
+                    df_display.columns = ['Contenedor', 'Categoría', 'Tiempo', 'Estado', 'Minutos Transcurridos']
+                    
+                    # 3. Aplicamos Estilos (Fondo Rojo en Tiempo si demora mucho)
+                    # Usamos col_raw_dur del dataframe original para saber cuáles pintar
+                    # Necesitamos el índice alineado, así que usamos el index de df_show
+                    
+                    def estilo_rojo(row):
+                        # Obtenemos el valor numérico original usando el índice
+                        idx = row.name
+                        duracion_real = df.loc[idx, col_raw_dur]
+                        estado = df.loc[idx, col_stat]
+                        
+                        estilos = [''] * len(row)
+                        
+                        # Si está finalizado y demoró más de 60 mins (ajustable), pintar celda Tiempo rojo
+                        if estado == "Finalizado" and pd.notna(duracion_real) and duracion_real > 60:
+                             # La columna 'Tiempo' es la índice 2 (0=Cont, 1=Cat, 2=Tiempo)
+                             estilos[2] = 'background-color: #ff4b4b; color: white; font-weight: bold;'
+                        
+                        return estilos
+
                     st.dataframe(
-                        df_display.style.applymap(
-                            lambda x: 'color: red; font-weight: bold;' if isinstance(x, (int, float)) and x > 60 else '', 
-                            subset=["Minutos Transcurridos"]
-                        ).format({"Minutos Transcurridos": "{:.1f}"}), 
+                        df_display.style.apply(estilo_rojo, axis=1)
+                        .format({"Minutos Transcurridos": "{:.1f}"}), 
                         use_container_width=True
                     )
 
@@ -210,6 +252,7 @@ if file_rep and file_mon:
         render_tab(tab3, "OnBoard")
 
         st.divider()
+        # Descarga del Excel (con los datos crudos para que puedan trabajar)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
