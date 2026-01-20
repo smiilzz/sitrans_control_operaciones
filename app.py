@@ -2,29 +2,19 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+import numpy as np # Importamos numpy para cálculos rápidos de condiciones
 
 st.set_page_config(page_title="Sitrans Dashboard", layout="wide", page_icon="🚢")
 
-# Estilos CSS para parecerse al Dashboard de la imagen (Azul Sitrans y KPI Cards)
 st.markdown("""
     <style>
     .main { background-color: #f0f2f6; }
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #e0e0e0;
-        padding: 15px;
+        padding: 10px;
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        text-align: center;
-    }
-    div[data-testid="stMetricLabel"] {
-        font-size: 14px;
-        color: #555;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 24px;
-        font-weight: bold;
-        color: #003366; /* Azul Sitrans */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -36,25 +26,33 @@ st.title("🚢 Control de Operaciones - Sitrans")
 def extraer_metadatos(file):
     metadatos = {"Nave": "---", "Rotación": "---", "Fecha": "---"}
     try:
-        df_head = pd.read_excel(file, header=None, nrows=15)
-        texto_completo = " ".join(df_head.astype(str).stack().tolist()).upper()
+        df_head = pd.read_excel(file, header=None, nrows=20) # Leemos un poco más por si acaso
         
-        # Regex Fecha+Hora
+        # 1. Búsqueda de FECHA (Regex)
+        texto_completo = " ".join(df_head.astype(str).stack().tolist()).upper()
         match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto_completo)
         if match_fecha: metadatos["Fecha"] = match_fecha.group(1)
         else:
             match_solo_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto_completo)
             if match_solo_fecha: metadatos["Fecha"] = match_solo_fecha.group(1)
 
+        # 2. Búsqueda Fila por Fila (Nave y Rotación)
         for i, row in df_head.iterrows():
             fila = [str(x).strip().upper() for x in row if pd.notna(x) and str(x).strip() != ""]
+            
             for j, val in enumerate(fila):
+                # NAVE
                 if "NAVE" in val:
                     if ":" in val and len(val.split(":")) > 1: metadatos["Nave"] = val.split(":")[1].strip()
                     elif j+1 < len(fila): metadatos["Nave"] = fila[j+1]
-                if "ROTACION" in val or "VIAJE" in val:
-                    if ":" in val and len(val.split(":")) > 1: metadatos["Rotación"] = val.split(":")[1].strip()
-                    elif j+1 < len(fila): metadatos["Rotación"] = fila[j+1]
+                
+                # ROTACIÓN (Hacemos la búsqueda más agresiva)
+                if any(x in val for x in ["ROTACION", "ROTACIÓN", "VIAJE", "VOY"]):
+                    if ":" in val and len(val.split(":")) > 1: 
+                        metadatos["Rotación"] = val.split(":")[1].strip()
+                    elif j+1 < len(fila): 
+                        metadatos["Rotación"] = fila[j+1]
+        
         file.seek(0)
         return metadatos
     except:
@@ -92,21 +90,20 @@ file_mon = st.sidebar.file_uploader("📂 2_Monitor", type=["xlsx"])
 if file_rep and file_mon:
     meta = extraer_metadatos(file_rep)
     
-    # 1. BARRA SUPERIOR DE METADATOS
+    # METADATOS (Aseguramos que se vean bien)
     with st.container():
         c1, c2, c3 = st.columns(3)
-        c1.metric("Fecha Consulta", meta.get('Fecha', '---'))
-        c2.metric("Nave", meta.get('Nave', '---'))
-        c3.metric("Rotación", meta.get('Rotación', '---'))
+        c1.metric("📅 Fecha Consulta", meta.get('Fecha', '---'))
+        c2.metric("🚢 Nave", meta.get('Nave', '---'))
+        c3.metric("🔄 Rotación", meta.get('Rotación', '---')) # Aquí debería aparecer ahora
     
     st.divider()
 
-    # 2. PROCESAMIENTO
     df_rep = cargar_excel(file_rep, "CONTENEDOR")
     df_mon = cargar_excel(file_mon, "UNIDAD")
 
     if df_rep is not None and df_mon is not None:
-        # Limpieza Básica
+        # Limpieza
         df_rep = df_rep[df_rep['CONTENEDOR'].notna()]
         df_rep = df_rep[df_rep['CONTENEDOR'].astype(str).str.strip() != ""]
         df_rep = df_rep[~df_rep['CONTENEDOR'].astype(str).str.contains("Total", case=False, na=False)]
@@ -122,77 +119,105 @@ if file_rep and file_mon:
         else:
             df['TIPO'] = 'General'
 
-        # --- CÁLCULO DE TIEMPOS (MINUTOS) ---
-        # Definimos las parejas de columnas para restar
+        # --- DEFINICIÓN DE PROCESOS ---
         parejas_calculo = {
-            "Conexión": ("CONEXIÓN", "TIME_IN"),
-            "Desconexión": ("DESCONECCIÓN", "SOLICITUD DESCONEXIÓN"), # Ojo con la doble C de Navis
-            "OnBoard": ("CONEXIÓN ONBOARD", "TIME_LOAD")
+            "Conexión": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
+            "Desconexión": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
+            "OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
         }
 
-        # Convertimos a Datetime y Calculamos Restas
-        for proceso, (col_fin, col_ini) in parejas_calculo.items():
-            if col_fin in df.columns and col_ini in df.columns:
-                # Convertir a fecha inteligente
+        # Bucle Maestro: Calcula Tiempos y ESTADOS para cada proceso
+        for proceso, cols in parejas_calculo.items():
+            col_ini = cols["Ini"]
+            col_fin = cols["Fin"]
+            
+            if col_ini in df.columns and col_fin in df.columns:
+                # 1. Convertir Fechas
                 df[col_ini] = pd.to_datetime(df[col_ini], dayfirst=True, errors='coerce')
                 df[col_fin] = pd.to_datetime(df[col_fin], dayfirst=True, errors='coerce')
                 
-                # Calcular diferencia en minutos
+                # 2. Lógica de ESTADOS (Tu requerimiento)
+                # Condiciones con numpy.select (es como un IF gigante y rápido)
+                condiciones = [
+                    (df[col_ini].notna()) & (df[col_fin].notna()), # Tiene ambas -> Finalizado
+                    (df[col_ini].notna()) & (df[col_fin].isna()),  # Solo inicio -> Pendiente
+                    (df[col_ini].isna())                           # No tiene inicio -> Sin Solicitud
+                ]
+                opciones = ["Finalizado", "Pendiente", "Sin Solicitud"]
+                
+                col_status = f"Estado_{proceso}"
+                df[col_status] = np.select(condiciones, opciones, default="Sin Solicitud")
+
+                # 3. Calcular Minutos (Solo si está finalizado)
                 col_min = f"Min_{proceso}"
                 df[col_min] = (df[col_fin] - df[col_ini]).dt.total_seconds() / 60
             else:
-                st.warning(f"⚠️ Faltan columnas para calcular {proceso}: Buscaba '{col_ini}' y '{col_fin}'")
+                st.warning(f"⚠️ Faltan columnas para {proceso}")
 
-        # --- DASHBOARD POR PESTAÑAS ---
-        tab1, tab2, tab3 = st.tabs(["🔌 Conexión a Stacking", "🔋 Desconexión", "🚢 OnBoard"])
+        # --- DASHBOARD VISUAL ---
+        tab1, tab2, tab3 = st.tabs(["🔌 Conexión", "🔋 Desconexión", "🚢 OnBoard"])
 
-        def mostrar_kpis(tab, proceso, col_minutos):
+        def render_tab(tab, proceso):
+            col_min = f"Min_{proceso}"
+            col_stat = f"Estado_{proceso}"
+            
             with tab:
-                if col_minutos in df.columns:
-                    # Filtramos solo los que tienen dato válido (no nulos)
-                    df_valido = df.dropna(subset=[col_minutos])
-                    
-                    # Promedios
-                    prom_general = df_valido[df_valido['TIPO'] == 'General'][col_minutos].mean()
-                    prom_ct = df_valido[df_valido['TIPO'] == 'CT'][col_minutos].mean()
-                    
-                    # Limpieza de NaN para mostrar 0 si no hay datos
-                    prom_general = 0 if pd.isna(prom_general) else prom_general
-                    prom_ct = 0 if pd.isna(prom_ct) else prom_ct
+                if col_stat in df.columns:
+                    # Contadores de Estado
+                    conteo = df[col_stat].value_counts()
+                    fin = conteo.get("Finalizado", 0)
+                    pen = conteo.get("Pendiente", 0)
+                    sin = conteo.get("Sin Solicitud", 0)
 
-                    # Layout de KPIs
-                    st.subheader(f"⏱️ Tiempos de {proceso}")
-                    k1, k2, k3 = st.columns(3)
+                    # Tarjetas de Resumen de Estado
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("Finalizados", fin, delta="Completos")
+                    k2.metric("Pendientes (En Vivo)", pen, delta="En Proceso", delta_color="off")
+                    k3.metric("Sin Solicitud", sin, delta="Inactivos", delta_color="off")
                     
-                    k1.metric(f"Promedio General", f"{prom_general:.1f} min")
-                    k2.metric(f"Promedio CT (Reefer)", f"{prom_ct:.1f} min", delta_color="inverse")
+                    # Cálculo de Promedios (Solo de los Finalizados)
+                    df_fin = df[df[col_stat] == "Finalizado"]
+                    prom_gen = df_fin[df_fin['TIPO'] == 'General'][col_min].mean()
+                    prom_ct = df_fin[df_fin['TIPO'] == 'CT'][col_min].mean()
                     
-                    # Conteo de casos
-                    total_ops = len(df_valido)
-                    k3.metric("Contenedores Procesados", total_ops)
+                    # Mostrar Promedios si hay datos
+                    k4.metric("Tiempo Promedio (CT)", 
+                              f"{prom_ct:.1f} min" if not pd.isna(prom_ct) else "0 min")
 
-                    # Alerta Visual (Ejemplo de la imagen: Rojo si > 30 min)
-                    umbral = 30
-                    rojos = len(df_valido[df_valido[col_minutos] > umbral])
-                    if rojos > 0:
-                        st.error(f"🚨 ATENCIÓN: {rojos} Contenedores exceden los {umbral} minutos en {proceso}")
+                    st.divider()
+
+                    # FILTRO DE TABLA
+                    filtro = st.radio(f"Filtrar tabla de {proceso}:", 
+                                      ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], 
+                                      horizontal=True, key=proceso)
+                    
+                    # Aplicar filtro
+                    if filtro == "Todos":
+                        df_show = df
                     else:
-                        st.success(f"✅ Operación fluida: Ningún contenedor excede los {umbral} minutos")
+                        df_show = df[df[col_stat] == filtro]
 
-                else:
-                    st.info(f"No hay datos suficientes para calcular {proceso}.")
+                    # Mostrar tabla filtrada (Columnas relevantes)
+                    cols_mostrar = ['CONTENEDOR', 'TIPO', col_stat]
+                    # Agregamos las fechas y minutos si existen
+                    if col_min in df.columns: cols_mostrar.append(col_min)
+                    
+                    st.dataframe(df_show[cols_mostrar], use_container_width=True)
+                    
+                    if filtro == "Pendiente" and pen > 0:
+                        st.warning(f"⚠️ Hay {pen} contenedores con el proceso iniciado pero no finalizado.")
 
-        # Renderizar cada pestaña
-        mostrar_kpis(tab1, "Conexión", "Min_Conexión")
-        mostrar_kpis(tab2, "Desconexión", "Min_Desconexión")
-        mostrar_kpis(tab3, "OnBoard", "Min_OnBoard")
+        # Renderizar
+        render_tab(tab1, "Conexión")
+        render_tab(tab2, "Desconexión")
+        render_tab(tab3, "OnBoard")
 
-        # Botón de Descarga (Oculto al final)
+        # Descarga
         st.divider()
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-        st.download_button("📥 Descargar Excel con Cálculos", buffer.getvalue(), "Reporte_Calculado.xlsx")
+        st.download_button("📥 Descargar Excel Completo", buffer.getvalue(), "Sitrans_Full_Data.xlsx")
 
 else:
-    st.info("👋 Sube los archivos '1_Reporte' y '2_Monitor' para ver el Dashboard.")
+    st.info("👋 Sube los archivos para comenzar.")
