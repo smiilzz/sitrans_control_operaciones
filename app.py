@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import io
 import re
-import numpy as np # Importamos numpy para cálculos rápidos de condiciones
+import numpy as np
 
+# Configuración de página
 st.set_page_config(page_title="Sitrans Dashboard", layout="wide", page_icon="🚢")
 
 st.markdown("""
@@ -22,37 +23,27 @@ st.markdown("""
 st.title("🚢 Control de Operaciones - Sitrans")
 
 # --- FUNCIONES DE SOPORTE ---
-
 def extraer_metadatos(file):
     metadatos = {"Nave": "---", "Rotación": "---", "Fecha": "---"}
     try:
-        df_head = pd.read_excel(file, header=None, nrows=20) # Leemos un poco más por si acaso
-        
-        # 1. Búsqueda de FECHA (Regex)
+        df_head = pd.read_excel(file, header=None, nrows=20)
         texto_completo = " ".join(df_head.astype(str).stack().tolist()).upper()
+        
         match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto_completo)
         if match_fecha: metadatos["Fecha"] = match_fecha.group(1)
         else:
             match_solo_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto_completo)
             if match_solo_fecha: metadatos["Fecha"] = match_solo_fecha.group(1)
 
-        # 2. Búsqueda Fila por Fila (Nave y Rotación)
         for i, row in df_head.iterrows():
             fila = [str(x).strip().upper() for x in row if pd.notna(x) and str(x).strip() != ""]
-            
             for j, val in enumerate(fila):
-                # NAVE
                 if "NAVE" in val:
                     if ":" in val and len(val.split(":")) > 1: metadatos["Nave"] = val.split(":")[1].strip()
                     elif j+1 < len(fila): metadatos["Nave"] = fila[j+1]
-                
-                # ROTACIÓN (Hacemos la búsqueda más agresiva)
                 if any(x in val for x in ["ROTACION", "ROTACIÓN", "VIAJE", "VOY"]):
-                    if ":" in val and len(val.split(":")) > 1: 
-                        metadatos["Rotación"] = val.split(":")[1].strip()
-                    elif j+1 < len(fila): 
-                        metadatos["Rotación"] = fila[j+1]
-        
+                    if ":" in val and len(val.split(":")) > 1: metadatos["Rotación"] = val.split(":")[1].strip()
+                    elif j+1 < len(fila): metadatos["Rotación"] = fila[j+1]
         file.seek(0)
         return metadatos
     except:
@@ -90,13 +81,11 @@ file_mon = st.sidebar.file_uploader("📂 2_Monitor", type=["xlsx"])
 if file_rep and file_mon:
     meta = extraer_metadatos(file_rep)
     
-    # METADATOS (Aseguramos que se vean bien)
     with st.container():
         c1, c2, c3 = st.columns(3)
         c1.metric("📅 Fecha Consulta", meta.get('Fecha', '---'))
         c2.metric("🚢 Nave", meta.get('Nave', '---'))
-        c3.metric("🔄 Rotación", meta.get('Rotación', '---')) # Aquí debería aparecer ahora
-    
+        c3.metric("🔄 Rotación", meta.get('Rotación', '---'))
     st.divider()
 
     df_rep = cargar_excel(file_rep, "CONTENEDOR")
@@ -111,7 +100,7 @@ if file_rep and file_mon:
         # Cruce
         df = pd.merge(df_rep, df_mon, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
         
-        # Clasificación Normal vs CT
+        # Clasificación
         cols_ct = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
         presentes = [c for c in df.columns if c in cols_ct]
         if presentes:
@@ -119,105 +108,112 @@ if file_rep and file_mon:
         else:
             df['TIPO'] = 'General'
 
-        # --- DEFINICIÓN DE PROCESOS ---
+        # --- CÁLCULO DE TIEMPOS ---
         parejas_calculo = {
             "Conexión": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
             "Desconexión": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
             "OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
         }
 
-        # Bucle Maestro: Calcula Tiempos y ESTADOS para cada proceso
+        # --- AQUI ESTÁ EL CAMBIO DE HORA CHILE ---
+        # 1. Obtenemos hora actual en Chile (Santiago)
+        # 2. .tz_localize(None) elimina la info de zona horaria para poder restar con el Excel
+        ahora_chile = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
+
         for proceso, cols in parejas_calculo.items():
             col_ini = cols["Ini"]
             col_fin = cols["Fin"]
             
             if col_ini in df.columns and col_fin in df.columns:
-                # 1. Convertir Fechas
                 df[col_ini] = pd.to_datetime(df[col_ini], dayfirst=True, errors='coerce')
                 df[col_fin] = pd.to_datetime(df[col_fin], dayfirst=True, errors='coerce')
                 
-                # 2. Lógica de ESTADOS (Tu requerimiento)
-                # Condiciones con numpy.select (es como un IF gigante y rápido)
+                # Estados
                 condiciones = [
-                    (df[col_ini].notna()) & (df[col_fin].notna()), # Tiene ambas -> Finalizado
-                    (df[col_ini].notna()) & (df[col_fin].isna()),  # Solo inicio -> Pendiente
-                    (df[col_ini].isna())                           # No tiene inicio -> Sin Solicitud
+                    (df[col_ini].notna()) & (df[col_fin].notna()), 
+                    (df[col_ini].notna()) & (df[col_fin].isna()),  
+                    (df[col_ini].isna())                           
                 ]
                 opciones = ["Finalizado", "Pendiente", "Sin Solicitud"]
-                
                 col_status = f"Estado_{proceso}"
                 df[col_status] = np.select(condiciones, opciones, default="Sin Solicitud")
 
-                # 3. Calcular Minutos (Solo si está finalizado)
-                col_min = f"Min_{proceso}"
-                df[col_min] = (df[col_fin] - df[col_ini]).dt.total_seconds() / 60
+                # Minutos Transcurridos
+                col_min_real = f"Min_Transcurridos_{proceso}"
+                
+                # A. Finalizado: Diferencia entre Fin e Inicio
+                df.loc[df[col_status] == "Finalizado", col_min_real] = (df[col_fin] - df[col_ini]).dt.total_seconds() / 60
+                
+                # B. Pendiente: Diferencia entre AHORA (Chile) e Inicio
+                df.loc[df[col_status] == "Pendiente", col_min_real] = (ahora_chile - df[col_ini]).dt.total_seconds() / 60
+                
+                # C. Sin Solicitud: 0
+                df.loc[df[col_status] == "Sin Solicitud", col_min_real] = 0
+
             else:
                 st.warning(f"⚠️ Faltan columnas para {proceso}")
 
-        # --- DASHBOARD VISUAL ---
+        # --- VISUALIZACIÓN ---
         tab1, tab2, tab3 = st.tabs(["🔌 Conexión", "🔋 Desconexión", "🚢 OnBoard"])
 
         def render_tab(tab, proceso):
-            col_min = f"Min_{proceso}"
             col_stat = f"Estado_{proceso}"
+            col_min_real = f"Min_Transcurridos_{proceso}"
             
             with tab:
                 if col_stat in df.columns:
-                    # Contadores de Estado
+                    # Métricas
                     conteo = df[col_stat].value_counts()
-                    fin = conteo.get("Finalizado", 0)
-                    pen = conteo.get("Pendiente", 0)
-                    sin = conteo.get("Sin Solicitud", 0)
-
-                    # Tarjetas de Resumen de Estado
-                    k1, k2, k3, k4 = st.columns(4)
-                    k1.metric("Finalizados", fin, delta="Completos")
-                    k2.metric("Pendientes (En Vivo)", pen, delta="En Proceso", delta_color="off")
-                    k3.metric("Sin Solicitud", sin, delta="Inactivos", delta_color="off")
                     
-                    # Cálculo de Promedios (Solo de los Finalizados)
+                    k1, k2, k3, k4, k5 = st.columns(5)
+                    k1.metric("Finalizados", conteo.get("Finalizado", 0))
+                    k2.metric("Pendientes", conteo.get("Pendiente", 0), delta="En Vivo", delta_color="off")
+                    k3.metric("Sin Solicitud", conteo.get("Sin Solicitud", 0))
+                    
                     df_fin = df[df[col_stat] == "Finalizado"]
-                    prom_gen = df_fin[df_fin['TIPO'] == 'General'][col_min].mean()
-                    prom_ct = df_fin[df_fin['TIPO'] == 'CT'][col_min].mean()
+                    prom_gen = df_fin[df_fin['TIPO'] == 'General'][col_min_real].mean()
+                    prom_ct = df_fin[df_fin['TIPO'] == 'CT'][col_min_real].mean()
                     
-                    # Mostrar Promedios si hay datos
-                    k4.metric("Tiempo Promedio (CT)", 
-                              f"{prom_ct:.1f} min" if not pd.isna(prom_ct) else "0 min")
+                    k4.metric("Promedio General", f"{prom_gen:.1f} min" if not pd.isna(prom_gen) else "0 min")
+                    k5.metric("Promedio CT", f"{prom_ct:.1f} min" if not pd.isna(prom_ct) else "0 min")
 
                     st.divider()
 
-                    # FILTRO DE TABLA
-                    filtro = st.radio(f"Filtrar tabla de {proceso}:", 
+                    # Filtro
+                    filtro = st.radio(f"Ver estado en {proceso}:", 
                                       ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], 
                                       horizontal=True, key=proceso)
                     
-                    # Aplicar filtro
-                    if filtro == "Todos":
-                        df_show = df
-                    else:
-                        df_show = df[df[col_stat] == filtro]
+                    if filtro == "Todos": df_show = df
+                    else: df_show = df[df[col_stat] == filtro]
 
-                    # Mostrar tabla filtrada (Columnas relevantes)
-                    cols_mostrar = ['CONTENEDOR', 'TIPO', col_stat]
-                    # Agregamos las fechas y minutos si existen
-                    if col_min in df.columns: cols_mostrar.append(col_min)
+                    # Tabla
+                    cols_base = ['CONTENEDOR', 'TIPO']
+                    parejas = parejas_calculo[proceso]
+                    cols_fechas = [parejas["Ini"], parejas["Fin"]]
+                    cols_finales = cols_base + cols_fechas + [col_stat, col_min_real]
                     
-                    st.dataframe(df_show[cols_mostrar], use_container_width=True)
+                    df_display = df_show[cols_finales].copy()
+                    df_display.rename(columns={col_min_real: "Minutos Transcurridos"}, inplace=True)
                     
-                    if filtro == "Pendiente" and pen > 0:
-                        st.warning(f"⚠️ Hay {pen} contenedores con el proceso iniciado pero no finalizado.")
+                    # Formato Condicional (Rojo si > 60 min y es positivo)
+                    st.dataframe(
+                        df_display.style.applymap(
+                            lambda x: 'color: red; font-weight: bold;' if isinstance(x, (int, float)) and x > 60 else '', 
+                            subset=["Minutos Transcurridos"]
+                        ).format({"Minutos Transcurridos": "{:.1f}"}), 
+                        use_container_width=True
+                    )
 
-        # Renderizar
         render_tab(tab1, "Conexión")
         render_tab(tab2, "Desconexión")
         render_tab(tab3, "OnBoard")
 
-        # Descarga
         st.divider()
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-        st.download_button("📥 Descargar Excel Completo", buffer.getvalue(), "Sitrans_Full_Data.xlsx")
+        st.download_button("📥 Descargar Reporte Full", buffer.getvalue(), "Sitrans_Reporte.xlsx")
 
 else:
     st.info("👋 Sube los archivos para comenzar.")
