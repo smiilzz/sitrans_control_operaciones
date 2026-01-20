@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
-import re  # Importamos Regex para buscar patrones de texto exactos
+import re
 
 st.set_page_config(page_title="Sitrans Logistics Hub", layout="wide", page_icon="🚢")
 
@@ -24,57 +24,53 @@ st.title("🚢 Hub de Gestión Reefers - Sitrans")
 def extraer_metadatos(file):
     """
     Escanea las primeras filas buscando patrones inteligentes
-    para Nave, Rotación y Fecha, sin importar si están en celdas combinadas.
+    para Nave, Rotación y Fecha con HORA.
     """
     metadatos = {"Nave": "---", "Rotación": "---", "Fecha": "---"}
     try:
-        # Leemos las primeras 15 filas como texto puro
+        # Leemos las primeras 15 filas
         df_head = pd.read_excel(file, header=None, nrows=15)
         
-        # Estrategia 1: Búsqueda por Texto Completo (Regex)
-        # Convertimos todo el bloque de celdas a un solo texto gigante para buscar patrones
+        # Estrategia 1: Búsqueda por Regex en todo el bloque de texto
+        # Convertimos todo a string para buscar patrones de fecha y hora
         texto_completo = " ".join(df_head.astype(str).stack().tolist()).upper()
         
-        # Buscar FECHA (DD/MM/AAAA o DD-MM-AAAA)
-        match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto_completo)
-        if match_fecha:
-            metadatos["Fecha"] = match_fecha.group(1)
+        # PATRÓN MEJORADO: Busca DD/MM/AAAA seguido opcionalmente de HH:MM
+        # Explicación regex: \d{2}:\d{2} busca hora:minutos
+        match_fecha_hora = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto_completo)
+        
+        if match_fecha_hora:
+            # Si encuentra fecha Y hora, usa eso
+            metadatos["Fecha"] = match_fecha_hora.group(1)
+        else:
+            # Si no, busca solo la fecha (fallback)
+            match_solo_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', texto_completo)
+            if match_solo_fecha:
+                metadatos["Fecha"] = match_solo_fecha.group(1)
             
-        # Estrategia 2: Búsqueda Fila por Fila (Para Nave y Rotación)
+        # Estrategia 2: Búsqueda Fila por Fila (Nave y Rotación)
         for i, row in df_head.iterrows():
-            # Convertimos la fila a lista de strings limpios
             fila = [str(x).strip().upper() for x in row if pd.notna(x) and str(x).strip() != ""]
             
             for j, val in enumerate(fila):
-                # Lógica para NAVE
+                # NAVE
                 if "NAVE" in val:
-                    # Caso A: "NAVE: MAERSK" (Todo en la misma celda)
                     if ":" in val and len(val.split(":")) > 1:
-                        posible_valor = val.split(":")[1].strip()
-                        if len(posible_valor) > 2: # Evitar capturar basura
-                            metadatos["Nave"] = posible_valor
-                            break
-                    # Caso B: Celda 1="NAVE", Celda 2="MAERSK" (Celdas separadas)
+                        val_limpio = val.split(":")[1].strip()
+                        if len(val_limpio) > 1: metadatos["Nave"] = val_limpio
                     elif j + 1 < len(fila):
                         metadatos["Nave"] = fila[j+1]
-                        break
 
-                # Lógica para ROTACIÓN / VIAJE
+                # ROTACIÓN / VIAJE
                 if "ROTACION" in val or "ROTACIÓN" in val or "VIAJE" in val:
-                    # Caso A: "ROTACION: 12345" (Misma celda)
                     if ":" in val and len(val.split(":")) > 1:
                         metadatos["Rotación"] = val.split(":")[1].strip()
-                        break
-                    # Caso B: Celdas separadas
                     elif j + 1 < len(fila):
                         metadatos["Rotación"] = fila[j+1]
-                        break
         
         file.seek(0)
         return metadatos
     except Exception as e:
-        # Si falla algo, devolvemos vacíos pero no rompemos la app
-        print(f"Debug Info - Error Metadatos: {e}")
         file.seek(0)
         return metadatos
 
@@ -110,7 +106,7 @@ file_mon = st.sidebar.file_uploader("📂 2_Monitor (Unidad)", type=["xlsx"])
 
 # --- LÓGICA PRINCIPAL ---
 if file_rep and file_mon:
-    # 1. Extraer Metadatos (Versión Mejorada)
+    # 1. Metadatos
     meta = extraer_metadatos(file_rep)
     
     # Header Informativo
@@ -119,7 +115,7 @@ if file_rep and file_mon:
     c2.info(f"🚢 **Nave:** {meta.get('Nave', '---')}")
     c3.info(f"🔄 **Rotación:** {meta.get('Rotación', '---')}")
 
-    with st.spinner('Procesando lógica de negocio (Normal vs CT)...'):
+    with st.spinner('Procesando lógica Normal vs CT...'):
         df_rep = cargar_excel_detectando_header(file_rep, "CONTENEDOR")
         df_mon = cargar_excel_detectando_header(file_mon, "UNIDAD")
 
@@ -166,4 +162,4 @@ if file_rep and file_mon:
             st.download_button("📥 Descargar Excel Consolidado", buffer.getvalue(), "Reporte_Sitrans.xlsx")
 
 else:
-    st.info("Sube los archivos para ver la información.")
+    st.info("Sube los archivos para comenzar.")
