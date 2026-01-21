@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS VISUAL (SOLUCIÓN QUIRÚRGICA) ---
+# --- CSS VISUAL (HEADER RESTAURADO) ---
 st.markdown("""
     <style>
     /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
@@ -21,39 +21,8 @@ st.markdown("""
         background-color: #ffffff !important;
         color: #333333;
     }
-    
-    /* 2. MANEJO DE LA BARRA SUPERIOR (HEADER) */
-    
-    /* (A) Ocultamos la barra de herramientas de la derecha (GitHub, Settings, etc.) */
-    [data-testid="stToolbar"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* (B) Ocultamos las decoraciones (línea de colores) */
-    [data-testid="stDecoration"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* (C) IMPORTANTE: Forzamos a que el Header sea visible para que el botón del sidebar funcione */
-    header[data-testid="stHeader"] {
-        visibility: visible !important;
-        background-color: rgba(0,0,0,0) !important; /* Transparente para que se vea limpio */
-    }
-    
-    /* (D) Ocultamos el footer de "Made with Streamlit" */
-    footer {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* (E) Ajustamos el padding para que el contenido suba un poco */
-    .block-container {
-        padding-top: 2rem !important;
-    }
 
-    /* 3. Header Personalizado de Datos (Cuadro Azul) */
+    /* 2. Header Personalizado de Datos (Cuadro Azul) */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -70,7 +39,7 @@ st.markdown("""
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
 
-    /* 4. Pestañas (Tabs) */
+    /* 3. Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -92,7 +61,7 @@ st.markdown("""
         font-size: 16px !important; margin: 0;
     }
 
-    /* 5. KPI Cards */
+    /* 4. KPI Cards */
     .kpi-card {
         padding: 20px;
         border-radius: 15px;
@@ -112,7 +81,7 @@ st.markdown("""
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
 
-    /* 6. Tarjetas de Promedio (Metric Cards) */
+    /* 5. Tarjetas de Promedio (Metric Cards) */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -130,7 +99,7 @@ st.markdown("""
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
 
-    /* 7. Alertas de Texto */
+    /* 6. Alertas de Texto */
     .alert-box {
         padding: 12px;
         border-radius: 8px;
@@ -146,7 +115,7 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
 
-    /* 8. Filtros Pills */
+    /* 7. Filtros Pills */
     div[role="radiogroup"] {
         background-color: white;
         padding: 8px;
