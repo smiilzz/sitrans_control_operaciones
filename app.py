@@ -17,13 +17,13 @@ st.set_page_config(
 # --- CSS VISUAL (MODO KIOSCO Y ESTILOS) ---
 st.markdown("""
     <style>
-    /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
+    /* 1. FORZAR TEMA CLARO */
     .stApp {
         background-color: #ffffff !important;
         color: #333333;
     }
     
-    /* 2. OCULTAR BOTONES DE GITHUB Y MENÚ DE STREAMLIT (NUEVO) */
+    /* 2. OCULTAR BOTONES DE GITHUB Y MENÚ DE STREAMLIT */
     #MainMenu {visibility: hidden;} /* Oculta el menú de 3 puntos */
     footer {visibility: hidden;}    /* Oculta 'Made with Streamlit' */
     header {visibility: hidden;}    /* Oculta la barra superior con el botón de GitHub */
@@ -33,12 +33,12 @@ st.markdown("""
         padding-top: 1rem !important;
     }
 
-    /* 3. Header Personalizado de Datos */
+    /* 3. Estilos del Header de Datos (Cuadro Azul) */
     .header-data-box {
         background-color: white;
         padding: 20px;
         border-radius: 12px;
-        border-left: 6px solid #003366; /* Azul Sitrans */
+        border-left: 6px solid #003366; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         margin-bottom: 25px;
         display: flex;
@@ -50,7 +50,7 @@ st.markdown("""
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
 
-    /* 4. Pestañas (Tabs) */
+    /* 4. Estilos de Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -92,7 +92,7 @@ st.markdown("""
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
 
-    /* 6. Tarjetas de Promedio (Metric Cards) */
+    /* 6. Tarjetas de Promedio */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -243,7 +243,7 @@ def procesar_datos_completos(files_rep_list, file_mon):
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
-        st.image("Logo.png", use_container_width=True) # Tu logo ajustado
+        st.image("Logo.png", use_container_width=True)
         
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
@@ -361,7 +361,6 @@ if files_rep_list and file_mon:
                     with c2:
                         st.subheader("📊 Indicadores de Rendimiento")
                         pct = (df_activo['Cumple'].sum() / len(df_activo)) * 100
-                        
                         bg_color = "bg-green" if pct >= 95 else "bg-yellow" if pct >= 85 else "bg-red"
                         
                         # FILA 1: KPI Principal
@@ -372,32 +371,29 @@ if files_rep_list and file_mon:
                         # ALERTAS Y PROMEDIOS
                         with k2:
                             if proceso == "OnBoard":
-                                # LÓGICA ESPECIAL PARA ONBOARD (SIN SEPARAR CT/NORMAL)
+                                # LÓGICA ONBOARD (SIN SEPARAR)
                                 prom_global = df_activo[col_min].mean()
                                 rojos_total = len(df_activo[~df_activo['Cumple']])
                                 
-                                # Alerta Única
                                 if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
                                 
-                                # Promedio Único Grande (Centrado visualmente)
+                                # PROMEDIO ÚNICO CENTRADO
                                 st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Global OnBoard</div></div>""", unsafe_allow_html=True)
                             
                             else:
-                                # LÓGICA ESTÁNDAR (CONEX/DESC) - SEPARADO
+                                # LÓGICA ESTÁNDAR
                                 rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
                                 rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
                                 prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
                                 prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
 
-                                # Alertas
                                 if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
                                 
                                 if rojos_normal > 0: st.markdown(f"""<div class="alert-box alert-red">⚠️ {rojos_normal} Normales Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
                                 
-                                # Promedios Separados
                                 p1, p2 = st.columns(2)
                                 with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">P. General</div></div>""", unsafe_allow_html=True)
                                 with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">P. CT</div></div>""", unsafe_allow_html=True)
@@ -413,7 +409,6 @@ if files_rep_list and file_mon:
                 if filtro == "Todos": df_show = df
                 else: df_show = df[df[col_stat] == filtro]
 
-                # Métricas
                 kd1, kd2, kd3 = st.columns(3)
                 kd1.metric("📦 Vista Actual", len(df_show))
                 kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
