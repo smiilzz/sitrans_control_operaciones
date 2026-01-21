@@ -160,7 +160,7 @@ def procesar_datos_completos(files_rep_list, file_mon):
 
 # --- INTERFAZ ---
 with st.sidebar:
-    st.image("https://www.sitrans.cl/wp-content/themes/sitrans-child/img/logo-sitrans.png", width=180)
+    st.image("https://www.google.com/search?q=logo+sitrans&sca_esv=7961302cda4152b2&rlz=1C1ONGR_enCL1188CL1188&udm=2&sxsrf=ANbL-n6Ud47QHBN-RG-BvTdB6x2L--vqSA:1768996114683&source=lnt&tbs=ic:trans&sa=X&ved=2ahUKEwjwgZmIyJySAxXPs5UCHTUuKg0QpwV6BAgFEA0&biw=1920&bih=911&dpr=1&aic=0#sv=CAMSVhoyKhBlLThGMF9wRTZ5ODJCektNMg44RjBfcEU2eTgyQnpLTToObmVUZjFjSjhmQjc5VU0gBCocCgZtb3NhaWMSEGUtOEYwX3BFNnk4MkJ6S00YADABGAcgmr3L1g8wAkoKCAIQAhgCIAIoAg", width=180)
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
     file_mon = st.file_uploader("📂 2_Monitor", type=["xlsx"])
@@ -183,7 +183,7 @@ if files_rep_list and file_mon:
         fecha = df['FECHA_CONSULTA'].iloc[0] if not df.empty else "---"
 
         with c_head_izq:
-            st.title(f"🚢 Ops: {nave}")
+            st.title(f"🚢 Control Operaciones: {nave}")
             st.markdown(f"**Fecha:** {fecha} | **Rotación:** {seleccion_rot}")
         
         st.divider()
@@ -279,14 +279,14 @@ if files_rep_list and file_mon:
                         bg_color = "bg-green" if pct >= 95 else "bg-yellow" if pct >= 85 else "bg-red"
                         
                         k1, k2 = st.columns(2)
-                        k1.markdown(f"""<div class="kpi-card {bg_color}"><p class="kpi-value">{pct:.1f}%</p><p class="kpi-label">CUMPLIMIENTO</p></div>""", unsafe_allow_html=True)
+                        k1.markdown(f"""<div class="kpi-card {bg_color}"><p class="kpi-value">{pct:.1f}%</p><p class="kpi-label">CUMPLIMIENTO % KPI</p></div>""", unsafe_allow_html=True)
                         
                         if rojos_ct > 0: k2.error(f"🚨 **{rojos_ct}** CT Fuera de Plazo")
                         else: k2.success("✅ CTs al día")
 
                         p1, p2 = st.columns(2)
-                        p1.markdown(f"""<div class="metric-box"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio General</div></div>""", unsafe_allow_html=True)
-                        p2.markdown(f"""<div class="metric-box"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio CT</div></div>""", unsafe_allow_html=True)
+                        p1.markdown(f"""<div class="metric-box"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Contenedores Normales</div></div>""", unsafe_allow_html=True)
+                        p2.markdown(f"""<div class="metric-box"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio Contenedores CT</div></div>""", unsafe_allow_html=True)
 
                 else:
                     st.info(f"ℹ️ No hay operaciones 'En Vivo' o 'Finalizadas' detectadas para {proceso} en este reporte.")
