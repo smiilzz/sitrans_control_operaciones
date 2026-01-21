@@ -149,7 +149,12 @@ st.markdown("""
 # --- FUNCIONES SOPORTE ---
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
-    if pd.isna(minutos) or minutos == 0: return ""
+    # CORRECCIÓN: Si es 0, mostramos "0:00:00" en lugar de nada.
+    if pd.isna(minutos): return ""
+    
+    # Aseguramos que no haya negativos visuales
+    if minutos < 0: minutos = 0 
+    
     segundos = int(minutos * 60)
     return f"{segundos//3600}:{(segundos%3600)//60:02d}:{segundos%60:02d}"
 
@@ -285,14 +290,23 @@ if files_rep_list and file_mon:
                 
                 col_min = f"Min_{proceso}"
                 mask_fin = df[f"Estado_{proceso}"] == "Finalizado"
-                df.loc[mask_fin, col_min] = (df.loc[mask_fin, cols["Fin"]] - df.loc[mask_fin, cols["Ini"]]).dt.total_seconds() / 60
-                mask_pen = df[f"Estado_{proceso}"] == "Pendiente"
-                df.loc[mask_pen, col_min] = (ahora - df.loc[mask_pen, cols["Ini"]]).dt.total_seconds() / 60
                 
+                # CÁLCULO Y CORRECCIÓN DE NEGATIVOS
+                # 1. Calculamos la diferencia bruta
+                diff_minutos = (df.loc[mask_fin, cols["Fin"]] - df.loc[mask_fin, cols["Ini"]]).dt.total_seconds() / 60
+                # 2. Aplicamos la regla: Si Fin < Ini (negativo), se convierte en 0.
+                df.loc[mask_fin, col_min] = diff_minutos.clip(lower=0) 
+
+                mask_pen = df[f"Estado_{proceso}"] == "Pendiente"
+                # Lo mismo para pendientes (aunque raro que pase)
+                diff_pendiente = (ahora - df.loc[mask_pen, cols["Ini"]]).dt.total_seconds() / 60
+                df.loc[mask_pen, col_min] = diff_pendiente.clip(lower=0)
+                
+                # Visualización
                 df[f"Ver_Tiempo_{proceso}"] = np.where(mask_fin, df[col_min].apply(formatear_duracion), "")
                 df[f"Ver_Trans_{proceso}"] = np.where(mask_pen, df[col_min], 0)
 
-            # CÁLCULO DE SEMÁFORO GLOBAL
+            # CÁLCULO DE SEMÁFORO (<= 15 VERDE)
             col_min_p = f"Min_{proceso}"
             cond_sem = [
                 df[col_min_p] <= 15,
@@ -311,16 +325,12 @@ if files_rep_list and file_mon:
                 col_min = f"Min_{proceso}"
                 col_sem = f"Semaforo_{proceso}"
                 
-                # Dataframe para métricas
                 df_activo = df[df[col_stat].isin(["Finalizado", "Pendiente"])].copy()
                 
-                # --- PREPARAR GRÁFICO (ORDENADO PARA QUE COINCIDA) ---
                 conteos = pd.DataFrame()
                 if not df_activo.empty:
                     conteos = df_activo[col_sem].value_counts().reset_index()
                     conteos.columns = ['Color', 'Cantidad']
-                    # ORDENAR POR CANTIDAD DESCENDENTE (COMO LO HACE PLOTLY POR DEFECTO)
-                    # Esto asegura que el índice 0 del gráfico sea el índice 0 de este dataframe
                     conteos = conteos.sort_values(by='Cantidad', ascending=False).reset_index(drop=True)
 
                 if not df_activo.empty:
@@ -333,8 +343,6 @@ if files_rep_list and file_mon:
                         df_activo['Cumple'] = np.select(cond_cumple, [True, True], default=False)
 
                     c1, c2 = st.columns([1, 2], gap="large")
-                    
-                    # VARIABLE DE SELECCIÓN (Iniciamos vacía)
                     filtro_color_seleccionado = None
 
                     with c1: 
@@ -343,15 +351,11 @@ if files_rep_list and file_mon:
                                      color='Color', 
                                      color_discrete_map={'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}, 
                                      hole=0.6)
-                        
-                        # IMPORTANTE: Desactivar ordenamiento automático de Plotly para que respete nuestro DF
                         fig.update_traces(sort=False) 
                         fig.update_layout(showlegend=True, margin=dict(t=10,b=10,l=10,r=10), height=200, legend=dict(orientation="h", y=-0.1))
                         
-                        # CAPTURAR CLIC
                         event = st.plotly_chart(fig, on_select="rerun", selection_mode="points", key=f"pie_{proceso}", use_container_width=True)
                         
-                        # PROCESAR CLIC
                         if event and event.selection["points"]:
                             point_index = event.selection["points"][0]["point_index"]
                             if point_index < len(conteos):
@@ -394,18 +398,14 @@ if files_rep_list and file_mon:
 
                 st.divider()
 
-                # --- FILTROS Y TABLA ---
                 filtro_estado = st.radio(f"f_{proceso}", ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
-                # 1. Filtro Estado
                 if filtro_estado == "Todos": df_show = df.copy()
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
 
-                # 2. Filtro Color Gráfico (Si está activo)
                 if filtro_color_seleccionado:
                     df_show = df_show[df_show[col_sem] == filtro_color_seleccionado]
 
-                # 3. Buscador
                 cb1, cb2 = st.columns([1, 2])
                 with cb1:
                     busqueda = st.text_input(f"🔍 Buscar Contenedor (Enter):", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}")
@@ -423,7 +423,8 @@ if files_rep_list and file_mon:
                     val = df.loc[row.name, col_min]
                     stt = df.loc[row.name, col_stat]
                     est = [''] * len(row)
-                    if stt in ["Finalizado", "Pendiente"] and val > 0:
+                    # CORRECCIÓN VISUAL: Incluimos 0 en el pintado (val >= 0)
+                    if stt in ["Finalizado", "Pendiente"] and pd.notna(val) and val >= 0:
                         c = "#d4edda" if val<=15 else "#fff3cd" if val<=30 else "#f8d7da"
                         est[4] = f"background-color: {c}; font-weight: bold; color: #333;"
                         if stt == "Finalizado": est[2] = f"background-color: {c}; font-weight: bold; color: #333;"
