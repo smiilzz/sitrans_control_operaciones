@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS VISUAL (CORREGIDO: BARRA LATERAL VISIBLE) ---
+# --- CSS VISUAL (MODO SILENCIOSO: OCULTAR GITHUB PERO DEJAR SIDEBAR) ---
 st.markdown("""
     <style>
     /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
@@ -23,11 +23,24 @@ st.markdown("""
         color: #333333;
     }
     
-    /* 2. OCULTAR MENÚS INNECESARIOS (PERO MANTENER BARRA SUPERIOR) */
-    #MainMenu {visibility: hidden;} /* Oculta el menú de 3 puntos (Settings/GitHub) */
-    footer {visibility: hidden;}    /* Oculta 'Made with Streamlit' */
+    /* 2. OCULTAR MENÚS ESPECÍFICOS (ESTO ES LO QUE BUSCAS) */
     
-    /* ELIMINAMOS 'header {visibility: hidden;}' PARA QUE SE VEA EL BOTÓN DEL SIDEBAR */
+    /* Oculta el menú de 3 puntos (Settings) */
+    #MainMenu {visibility: hidden;} 
+    
+    /* Oculta el pie de página 'Made with Streamlit' */
+    footer {visibility: hidden;} 
+    
+    /* Oculta la barra de herramientas derecha (Donde suele salir GitHub/Deploy) */
+    [data-testid="stToolbar"] {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* Oculta decoraciones superiores extras */
+    [data-testid="stDecoration"] {
+        visibility: hidden;
+    }
 
     /* 3. Header Personalizado de Datos */
     .header-data-box {
@@ -239,7 +252,7 @@ def procesar_datos_completos(files_rep_list, file_mon):
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
-        st.image("Logo.png", use_container_width=True)
+        st.image("Logo.png", use_container_width=True) # IMPORTANTE: 'L' Mayúscula
         
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
@@ -367,14 +380,15 @@ if files_rep_list and file_mon:
                         # ALERTAS Y PROMEDIOS
                         with k2:
                             if proceso == "OnBoard":
-                                # LÓGICA ONBOARD (SIN SEPARAR)
+                                # LÓGICA ESPECIAL PARA ONBOARD (SIN SEPARAR CT/NORMAL)
                                 prom_global = df_activo[col_min].mean()
                                 rojos_total = len(df_activo[~df_activo['Cumple']])
                                 
+                                # Alerta Única
                                 if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
                                 
-                                # PROMEDIO ÚNICO CENTRADO
+                                # Promedio Único Grande (Centrado visualmente)
                                 st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo OnBoard</div></div>""", unsafe_allow_html=True)
                             
                             else:
@@ -384,12 +398,14 @@ if files_rep_list and file_mon:
                                 prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
                                 prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
 
+                                # Alertas
                                 if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
                                 
                                 if rojos_normal > 0: st.markdown(f"""<div class="alert-box alert-red">⚠️ {rojos_normal} Normales Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
                                 
+                                # Promedios Separados
                                 p1, p2 = st.columns(2)
                                 with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores Normales</div></div>""", unsafe_allow_html=True)
                                 with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores CT</div></div>""", unsafe_allow_html=True)
