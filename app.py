@@ -235,7 +235,7 @@ def procesar_datos_completos(files_rep_list, file_mon):
 
 # --- INTERFAZ ---
 with st.sidebar:
-    st.image("logo.png", width=200)
+    st.image("Logo.png", width=200)
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
     file_mon = st.file_uploader("📂 2_Monitor", type=["xlsx"])
