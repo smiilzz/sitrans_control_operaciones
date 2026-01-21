@@ -13,19 +13,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS VISUAL ---
+# --- CSS VISUAL (SOLO ESTÉTICA, SIN OCULTAR MENÚS) ---
 st.markdown("""
     <style>
     .stApp { background-color: #ffffff !important; color: #333333; }
     
-    /* Ocultar elementos innecesarios */
-    [data-testid="stToolbar"] { visibility: hidden !important; display: none !important; }
-    [data-testid="stDecoration"] { visibility: hidden !important; display: none !important; }
-    header[data-testid="stHeader"] { visibility: visible !important; background-color: rgba(0,0,0,0) !important; }
-    footer { visibility: hidden !important; display: none !important; }
-    .block-container { padding-top: 2rem !important; }
+    /* Ajuste del padding superior */
+    .block-container { padding-top: 1rem !important; }
 
-    /* Header */
+    /* Header Personalizado */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -79,6 +75,7 @@ st.markdown("""
     }
     .kpi-value { font-size: 36px; font-weight: 800; margin: 0; line-height: 1; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
     .kpi-label { font-size: 13px; font-weight: 500; opacity: 0.95; margin-top: 5px; text-transform: uppercase; }
+    
     .bg-green { background: linear-gradient(135deg, #28a745, #218838); }
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
@@ -149,12 +146,8 @@ st.markdown("""
 # --- FUNCIONES SOPORTE ---
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
-    # CORRECCIÓN: Si es 0, mostramos "0:00:00" en lugar de nada.
     if pd.isna(minutos): return ""
-    
-    # Aseguramos que no haya negativos visuales
     if minutos < 0: minutos = 0 
-    
     segundos = int(minutos * 60)
     return f"{segundos//3600}:{(segundos%3600)//60:02d}:{segundos%60:02d}"
 
@@ -292,21 +285,17 @@ if files_rep_list and file_mon:
                 mask_fin = df[f"Estado_{proceso}"] == "Finalizado"
                 
                 # CÁLCULO Y CORRECCIÓN DE NEGATIVOS
-                # 1. Calculamos la diferencia bruta
                 diff_minutos = (df.loc[mask_fin, cols["Fin"]] - df.loc[mask_fin, cols["Ini"]]).dt.total_seconds() / 60
-                # 2. Aplicamos la regla: Si Fin < Ini (negativo), se convierte en 0.
                 df.loc[mask_fin, col_min] = diff_minutos.clip(lower=0) 
 
                 mask_pen = df[f"Estado_{proceso}"] == "Pendiente"
-                # Lo mismo para pendientes (aunque raro que pase)
                 diff_pendiente = (ahora - df.loc[mask_pen, cols["Ini"]]).dt.total_seconds() / 60
                 df.loc[mask_pen, col_min] = diff_pendiente.clip(lower=0)
                 
-                # Visualización
                 df[f"Ver_Tiempo_{proceso}"] = np.where(mask_fin, df[col_min].apply(formatear_duracion), "")
                 df[f"Ver_Trans_{proceso}"] = np.where(mask_pen, df[col_min], 0)
 
-            # CÁLCULO DE SEMÁFORO (<= 15 VERDE)
+            # CÁLCULO DE SEMÁFORO
             col_min_p = f"Min_{proceso}"
             cond_sem = [
                 df[col_min_p] <= 15,
@@ -331,7 +320,6 @@ if files_rep_list and file_mon:
                 if not df_activo.empty:
                     conteos = df_activo[col_sem].value_counts().reset_index()
                     conteos.columns = ['Color', 'Cantidad']
-                    conteos = conteos.sort_values(by='Cantidad', ascending=False).reset_index(drop=True)
 
                 if not df_activo.empty:
                     if proceso == "OnBoard": df_activo['Cumple'] = df_activo[col_min] <= 30
@@ -343,24 +331,16 @@ if files_rep_list and file_mon:
                         df_activo['Cumple'] = np.select(cond_cumple, [True, True], default=False)
 
                     c1, c2 = st.columns([1, 2], gap="large")
-                    filtro_color_seleccionado = None
 
                     with c1: 
-                        st.subheader("🚦 Semáforo Interactivo")
+                        st.subheader("🚦 Semáforo Tiempos")
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', 
                                      color_discrete_map={'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}, 
                                      hole=0.6)
-                        fig.update_traces(sort=False) 
                         fig.update_layout(showlegend=True, margin=dict(t=10,b=10,l=10,r=10), height=200, legend=dict(orientation="h", y=-0.1))
-                        
-                        event = st.plotly_chart(fig, on_select="rerun", selection_mode="points", key=f"pie_{proceso}", use_container_width=True)
-                        
-                        if event and event.selection["points"]:
-                            point_index = event.selection["points"][0]["point_index"]
-                            if point_index < len(conteos):
-                                filtro_color_seleccionado = conteos.iloc[point_index]["Color"]
-                                st.info(f"Filtro Activo: **{filtro_color_seleccionado}** (Haz clic en el gráfico de nuevo para quitar)")
+                        # SIN INTERACTIVIDAD COMPLEJA
+                        st.plotly_chart(fig, use_container_width=True)
 
                     with c2:
                         st.subheader("📊 Indicadores de Rendimiento")
@@ -394,30 +374,30 @@ if files_rep_list and file_mon:
                                 with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio CT</div></div>""", unsafe_allow_html=True)
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
-                    event = None
 
                 st.divider()
 
+                # --- 1. FILTRO DE ESTADO (Radio Buttons) ---
                 filtro_estado = st.radio(f"f_{proceso}", ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
+                # Base de datos filtrada por Estado
                 if filtro_estado == "Todos": df_show = df.copy()
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
 
-                if filtro_color_seleccionado:
-                    df_show = df_show[df_show[col_sem] == filtro_color_seleccionado]
-
-                cb1, cb2 = st.columns([1, 2])
-                with cb1:
+                # --- 2. BUSCADOR PARCIAL INTELIGENTE ---
+                c_search, _ = st.columns([1, 2])
+                with c_search:
                     busqueda = st.text_input(f"🔍 Buscar Contenedor (Enter):", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}")
                 
                 if busqueda:
                     termino = busqueda.strip()
                     df_show = df_show[df_show['CONTENEDOR'].astype(str).str.contains(termino, case=False, na=False)]
 
+                # --- MÉTRICAS Y TABLA ---
                 kd1, kd2, kd3 = st.columns(3)
                 kd1.metric("📦 Total en Tabla", len(df_show))
-                kd2.metric("❄️ Contenedores Normales", len(df_show[df_show['TIPO'] == 'General']))
-                kd3.metric("⚡ Contenedores CT", len(df_show[df_show['TIPO'] == 'CT']))
+                kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
+                kd3.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
