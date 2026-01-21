@@ -25,7 +25,7 @@ st.markdown("""
     footer { visibility: hidden !important; display: none !important; }
     .block-container { padding-top: 2rem !important; }
 
-    /* Header Personalizado */
+    /* Header */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -79,7 +79,6 @@ st.markdown("""
     }
     .kpi-value { font-size: 36px; font-weight: 800; margin: 0; line-height: 1; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
     .kpi-label { font-size: 13px; font-weight: 500; opacity: 0.95; margin-top: 5px; text-transform: uppercase; }
-    
     .bg-green { background: linear-gradient(135deg, #28a745, #218838); }
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
@@ -264,7 +263,7 @@ if files_rep_list and file_mon:
         </div>
         """, unsafe_allow_html=True)
         
-        # --- CÁLCULOS GLOBALES (CRUCIAL PARA EL FILTRADO) ---
+        # --- CÁLCULOS GLOBALES ---
         parejas = {
             "Conexión": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
             "Desconexión": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
@@ -293,14 +292,13 @@ if files_rep_list and file_mon:
                 df[f"Ver_Tiempo_{proceso}"] = np.where(mask_fin, df[col_min].apply(formatear_duracion), "")
                 df[f"Ver_Trans_{proceso}"] = np.where(mask_pen, df[col_min], 0)
 
-            # CÁLCULO DE SEMÁFORO GLOBAL (Para que esté disponible en df)
+            # CÁLCULO DE SEMÁFORO GLOBAL
             col_min_p = f"Min_{proceso}"
             cond_sem = [
                 df[col_min_p] <= 15,
                 (df[col_min_p] > 15) & (df[col_min_p] <= 30),
                 df[col_min_p] > 30
             ]
-            # Creamos columna de semáforo (Verde/Amarillo/Rojo)
             df[f"Semaforo_{proceso}"] = np.select(cond_sem, ['Verde', 'Amarillo', 'Rojo'], default='Rojo')
 
         # --- TABS ---
@@ -311,22 +309,21 @@ if files_rep_list and file_mon:
                 st.write("") 
                 col_stat = f"Estado_{proceso}"
                 col_min = f"Min_{proceso}"
-                col_sem = f"Semaforo_{proceso}" # Usamos la columna calculada globalmente
+                col_sem = f"Semaforo_{proceso}"
                 
-                # Dataframe para métricas (Excluimos Sin Solicitud para el gráfico)
+                # Dataframe para métricas
                 df_activo = df[df[col_stat].isin(["Finalizado", "Pendiente"])].copy()
                 
-                # --- PREPARAR INTERACTIVIDAD ---
-                # Importante: Ordenamos conteos para que el index coincida siempre con el gráfico
+                # --- PREPARAR GRÁFICO (ORDENADO PARA QUE COINCIDA) ---
                 conteos = pd.DataFrame()
                 if not df_activo.empty:
                     conteos = df_activo[col_sem].value_counts().reset_index()
                     conteos.columns = ['Color', 'Cantidad']
-                    # Ordenamos por Color para consistencia
-                    conteos = conteos.sort_values(by='Color')
+                    # ORDENAR POR CANTIDAD DESCENDENTE (COMO LO HACE PLOTLY POR DEFECTO)
+                    # Esto asegura que el índice 0 del gráfico sea el índice 0 de este dataframe
+                    conteos = conteos.sort_values(by='Cantidad', ascending=False).reset_index(drop=True)
 
                 if not df_activo.empty:
-                    # Lógica KPI
                     if proceso == "OnBoard": df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
                         cond_cumple = [
@@ -335,7 +332,6 @@ if files_rep_list and file_mon:
                         ]
                         df_activo['Cumple'] = np.select(cond_cumple, [True, True], default=False)
 
-                    # --- DASHBOARD SUPERIOR ---
                     c1, c2 = st.columns([1, 2], gap="large")
                     
                     # VARIABLE DE SELECCIÓN (Iniciamos vacía)
@@ -347,16 +343,17 @@ if files_rep_list and file_mon:
                                      color='Color', 
                                      color_discrete_map={'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}, 
                                      hole=0.6)
+                        
+                        # IMPORTANTE: Desactivar ordenamiento automático de Plotly para que respete nuestro DF
+                        fig.update_traces(sort=False) 
                         fig.update_layout(showlegend=True, margin=dict(t=10,b=10,l=10,r=10), height=200, legend=dict(orientation="h", y=-0.1))
                         
-                        # CAPTURAMOS EL CLIC
+                        # CAPTURAR CLIC
                         event = st.plotly_chart(fig, on_select="rerun", selection_mode="points", key=f"pie_{proceso}", use_container_width=True)
                         
-                        # PROCESAR EL CLIC
+                        # PROCESAR CLIC
                         if event and event.selection["points"]:
-                            # Obtenemos el índice del punto clickeado en el gráfico
                             point_index = event.selection["points"][0]["point_index"]
-                            # Como ordenamos 'conteos' antes, podemos usar iloc con seguridad
                             if point_index < len(conteos):
                                 filtro_color_seleccionado = conteos.iloc[point_index]["Color"]
                                 st.info(f"Filtro Activo: **{filtro_color_seleccionado}** (Haz clic en el gráfico de nuevo para quitar)")
@@ -393,36 +390,34 @@ if files_rep_list and file_mon:
                                 with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio CT</div></div>""", unsafe_allow_html=True)
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
+                    event = None
 
                 st.divider()
 
-                # --- 1. FILTRO DE ESTADO (Radio Buttons) ---
+                # --- FILTROS Y TABLA ---
                 filtro_estado = st.radio(f"f_{proceso}", ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
-                # Base de datos filtrada por Estado
+                # 1. Filtro Estado
                 if filtro_estado == "Todos": df_show = df.copy()
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
 
-                # --- 2. FILTRO POR COLOR (INTERACTIVO) ---
+                # 2. Filtro Color Gráfico (Si está activo)
                 if filtro_color_seleccionado:
-                    # Filtramos usando la columna Semaforo que calculamos globalmente
                     df_show = df_show[df_show[col_sem] == filtro_color_seleccionado]
 
-                # --- 3. BUSCADOR PARCIAL INTELIGENTE ---
-                c_search, _ = st.columns([1, 2])
-                with c_search:
-                    busqueda = st.text_input(f"🔍 Buscar Contenedor (Presiona Enter):", key=f"search_{proceso}", placeholder="Ej: TRHU o 123...")
+                # 3. Buscador
+                cb1, cb2 = st.columns([1, 2])
+                with cb1:
+                    busqueda = st.text_input(f"🔍 Buscar Contenedor (Enter):", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}")
                 
                 if busqueda:
-                    # Limpiamos espacios y filtramos ignorando mayúsculas (case=False)
                     termino = busqueda.strip()
                     df_show = df_show[df_show['CONTENEDOR'].astype(str).str.contains(termino, case=False, na=False)]
 
-                # --- MÉTRICAS Y TABLA ---
                 kd1, kd2, kd3 = st.columns(3)
                 kd1.metric("📦 Total en Tabla", len(df_show))
-                kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
-                kd3.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
+                kd2.metric("❄️ Contenedores Normales", len(df_show[df_show['TIPO'] == 'General']))
+                kd3.metric("⚡ Contenedores CT", len(df_show[df_show['TIPO'] == 'CT']))
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
