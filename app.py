@@ -6,7 +6,6 @@ import numpy as np
 import plotly.express as px
 
 # 1. CONFIGURACIÓN DE PÁGINA
-# 'initial_sidebar_state="expanded"' obliga a que la barra lateral esté abierta siempre al iniciar.
 st.set_page_config(
     page_title="Sitrans Control Operaciones", 
     layout="wide", 
@@ -14,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS VISUAL (MODO SILENCIOSO: OCULTAR GITHUB PERO DEJAR SIDEBAR) ---
+# --- CSS VISUAL (SOLUCIÓN QUIRÚRGICA) ---
 st.markdown("""
     <style>
     /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
@@ -23,26 +22,38 @@ st.markdown("""
         color: #333333;
     }
     
-    /* 2. OCULTAR MENÚS ESPECÍFICOS (ESTO ES LO QUE BUSCAS) */
+    /* 2. MANEJO DE LA BARRA SUPERIOR (HEADER) */
     
-    /* Oculta el menú de 3 puntos (Settings) */
-    #MainMenu {visibility: hidden;} 
-    
-    /* Oculta el pie de página 'Made with Streamlit' */
-    footer {visibility: hidden;} 
-    
-    /* Oculta la barra de herramientas derecha (Donde suele salir GitHub/Deploy) */
+    /* (A) Ocultamos la barra de herramientas de la derecha (GitHub, Settings, etc.) */
     [data-testid="stToolbar"] {
         visibility: hidden !important;
         display: none !important;
     }
     
-    /* Oculta decoraciones superiores extras */
+    /* (B) Ocultamos las decoraciones (línea de colores) */
     [data-testid="stDecoration"] {
-        visibility: hidden;
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* (C) IMPORTANTE: Forzamos a que el Header sea visible para que el botón del sidebar funcione */
+    header[data-testid="stHeader"] {
+        visibility: visible !important;
+        background-color: rgba(0,0,0,0) !important; /* Transparente para que se vea limpio */
+    }
+    
+    /* (D) Ocultamos el footer de "Made with Streamlit" */
+    footer {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* (E) Ajustamos el padding para que el contenido suba un poco */
+    .block-container {
+        padding-top: 2rem !important;
     }
 
-    /* 3. Header Personalizado de Datos */
+    /* 3. Header Personalizado de Datos (Cuadro Azul) */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -252,7 +263,7 @@ def procesar_datos_completos(files_rep_list, file_mon):
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
-        st.image("Logo.png", use_container_width=True) # IMPORTANTE: 'L' Mayúscula
+        st.image("Logo.png", use_container_width=True)
         
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
@@ -380,32 +391,26 @@ if files_rep_list and file_mon:
                         # ALERTAS Y PROMEDIOS
                         with k2:
                             if proceso == "OnBoard":
-                                # LÓGICA ESPECIAL PARA ONBOARD (SIN SEPARAR CT/NORMAL)
                                 prom_global = df_activo[col_min].mean()
                                 rojos_total = len(df_activo[~df_activo['Cumple']])
                                 
-                                # Alerta Única
                                 if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
                                 
-                                # Promedio Único Grande (Centrado visualmente)
                                 st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo OnBoard</div></div>""", unsafe_allow_html=True)
                             
                             else:
-                                # LÓGICA ESTÁNDAR (CONEX/DESC) - SEPARADO
                                 rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
                                 rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
                                 prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
                                 prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
 
-                                # Alertas
                                 if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
                                 
                                 if rojos_normal > 0: st.markdown(f"""<div class="alert-box alert-red">⚠️ {rojos_normal} Normales Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
                                 
-                                # Promedios Separados
                                 p1, p2 = st.columns(2)
                                 with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores Normales</div></div>""", unsafe_allow_html=True)
                                 with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores CT</div></div>""", unsafe_allow_html=True)
