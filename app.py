@@ -8,58 +8,65 @@ import plotly.express as px
 # Configuración de página
 st.set_page_config(page_title="Sitrans Control Operaciones", layout="wide", page_icon="🚢")
 
-# --- CSS VISUAL (ESTILOS MEJORADOS) ---
+# --- CSS VISUAL (ESTILOS DEFINITIVOS) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #f4f6f9; }
+    /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
+    .stApp {
+        background-color: #ffffff !important;
+        color: #333333;
+    }
     
-    /* 1. Header Personalizado */
+    /* 2. OCULTAR BARRA SUPERIOR (GITHUB/STREAMLIT) - MODO KIOSCO */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+        height: 0px;
+    }
+    /* Ajustar margen superior ya que no hay header */
+    .block-container {
+        padding-top: 1rem !important;
+    }
+
+    /* 3. Header Personalizado de Datos */
     .header-data-box {
         background-color: white;
         padding: 20px;
         border-radius: 12px;
         border-left: 6px solid #003366; /* Azul Sitrans */
-        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         margin-bottom: 25px;
         display: flex;
         justify-content: space-around;
         align-items: center;
+        border: 1px solid #f0f0f0;
     }
     .header-item { text-align: center; }
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
 
-    /* 2. Pestañas (Tabs) - Diseño "Airy" y más claro */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px; /* Separación entre pestañas */
-    }
-    
+    /* 4. Pestañas (Tabs) */
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
-        height: 55px;
-        background-color: #ffffff;
-        border-radius: 8px;
-        border: 1px solid #e0e0e0;
+        height: 50px;
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
         padding: 0 20px;
         font-weight: 600;
-        color: #666;
-        transition: all 0.3s ease;
+        color: #6c757d;
+        transition: all 0.2s;
     }
-    
-    /* Estado ACTIVO: Color más claro y elegante */
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #e3f2fd !important; /* Azul muy claro */
-        color: #003366 !important; /* Texto Azul Corporativo */
-        border: 2px solid #003366;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        background-color: #e3f2fd !important;
+        color: #003366 !important;
+        border: 1px solid #003366;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    
-    /* Texto dentro de las tabs */
     .stTabs [data-baseweb="tab"] div[data-testid="stMarkdownContainer"] p {
-        font-size: 16px !important;
-        margin: 0;
+        font-size: 16px !important; margin: 0;
     }
 
-    /* 3. KPI Cards (Cumplimiento) */
+    /* 5. KPI Cards */
     .kpi-card {
         padding: 20px;
         border-radius: 15px;
@@ -67,7 +74,7 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         margin-bottom: 15px;
-        height: 120px; /* Altura fija para alineación */
+        height: 120px;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -79,7 +86,7 @@ st.markdown("""
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
 
-    /* 4. Tarjetas de Promedio (Metric Cards) - Ahora son CONTENEDORES */
+    /* 6. Tarjetas de Promedio (Metric Cards) */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -87,16 +94,17 @@ st.markdown("""
         padding: 15px;
         text-align: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        height: 100px; /* Misma altura visual */
+        height: 100px;
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
+        margin-bottom: 10px;
     }
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
 
-    /* 5. Alertas de Texto */
+    /* 7. Alertas de Texto */
     .alert-box {
         padding: 12px;
         border-radius: 8px;
@@ -112,7 +120,7 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
 
-    /* 6. Filtros Pills (Ajustados y centrados) */
+    /* 8. Filtros Pills */
     div[role="radiogroup"] {
         background-color: white;
         padding: 8px;
@@ -125,7 +133,7 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
     div[role="radiogroup"] label {
-        flex-grow: 1; /* Ocupar espacio igual */
+        flex-grow: 1;
         text-align: center;
         margin: 0 4px;
         border-radius: 8px;
@@ -247,7 +255,7 @@ if files_rep_list and file_mon:
         fecha = df['FECHA_CONSULTA'].iloc[0] if not df.empty else "---"
 
         with c_head_izq:
-            st.title("🚢 Control de Operaciones")
+            st.title("🚢 Control de Operaciones Sitrans")
             
         st.markdown(f"""
         <div class="header-data-box">
@@ -297,19 +305,19 @@ if files_rep_list and file_mon:
                 df[f"Ver_Tiempo_{proceso}"] = np.where(mask_fin, df[col_min].apply(formatear_duracion), "")
                 df[f"Ver_Trans_{proceso}"] = np.where(mask_pen, df[col_min], 0)
 
-        # --- TABS CON DISEÑO MEJORADO ---
-        # Iconos unicode para ayudar visualmente
+        # --- TABS ---
         tab1, tab2, tab3 = st.tabs(["🔌 CONEXIÓN", "🔋 DESCONEXIÓN", "🚢 ONBOARD"])
 
         def render_tab(tab, proceso):
             with tab:
-                st.write("") # Espaciador superior
+                st.write("") 
                 col_stat = f"Estado_{proceso}"
                 col_min = f"Min_{proceso}"
                 
                 df_activo = df[df[col_stat].isin(["Finalizado", "Pendiente"])].copy()
                 
                 if not df_activo.empty:
+                    # Lógica Semáforo
                     cond_semaforo = [
                         df_activo[col_min] <= 15,
                         (df_activo[col_min] > 15) & (df_activo[col_min] <= 30),
@@ -317,7 +325,9 @@ if files_rep_list and file_mon:
                     ]
                     df_activo['Semaforo'] = np.select(cond_semaforo, ['Verde', 'Amarillo', 'Rojo'], default='Rojo')
                     
-                    if proceso == "OnBoard": df_activo['Cumple'] = df_activo[col_min] <= 30
+                    # Lógica KPI
+                    if proceso == "OnBoard": 
+                        df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
                         cond_cumple = [
                             (df_activo['TIPO'] == 'CT') & (df_activo[col_min] <= 30),
@@ -325,7 +335,7 @@ if files_rep_list and file_mon:
                         ]
                         df_activo['Cumple'] = np.select(cond_cumple, [True, True], default=False)
 
-                    # LAYOUT DASHBOARD
+                    # --- LAYOUT DASHBOARD ---
                     c1, c2 = st.columns([1, 2], gap="large")
                     
                     with c1: 
@@ -342,31 +352,46 @@ if files_rep_list and file_mon:
                     with c2:
                         st.subheader("📊 Indicadores de Rendimiento")
                         pct = (df_activo['Cumple'].sum() / len(df_activo)) * 100
-                        rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
-                        rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
-                        prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
-                        prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
                         
                         bg_color = "bg-green" if pct >= 95 else "bg-yellow" if pct >= 85 else "bg-red"
                         
-                        # FILA 1: KPI + Alertas (Lado a lado)
+                        # FILA 1: KPI Principal
                         k1, k2 = st.columns([1, 1.2])
                         with k1:
                             st.markdown(f"""<div class="kpi-card {bg_color}"><p class="kpi-value">{pct:.1f}%</p><p class="kpi-label">CUMPLIMIENTO KPI</p></div>""", unsafe_allow_html=True)
+                        
+                        # ALERTAS Y PROMEDIOS
                         with k2:
-                            # Alertas Visuales
-                            if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} Reefers (CT) Fuera de Plazo</div>""", unsafe_allow_html=True)
-                            else: st.markdown(f"""<div class="alert-box alert-green">✅ Reefers (CT) al día</div>""", unsafe_allow_html=True)
+                            if proceso == "OnBoard":
+                                # LÓGICA ESPECIAL PARA ONBOARD (SIN SEPARAR CT/NORMAL)
+                                prom_global = df_activo[col_min].mean()
+                                rojos_total = len(df_activo[~df_activo['Cumple']])
+                                
+                                # Alerta Única
+                                if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
+                                else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
+                                
+                                # Promedio Único Grande
+                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Global OnBoard</div></div>""", unsafe_allow_html=True)
                             
-                            if rojos_normal > 0: st.markdown(f"""<div class="alert-box alert-red">⚠️ {rojos_normal} Normales Fuera de Plazo</div>""", unsafe_allow_html=True)
-                            else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
+                            else:
+                                # LÓGICA ESTÁNDAR (CONEX/DESC) - SEPARADO
+                                rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
+                                rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
+                                prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
+                                prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
 
-                        # FILA 2: Promedios en Contenedores (Metric Cards)
-                        p1, p2 = st.columns(2)
-                        with p1:
-                            st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio General</div></div>""", unsafe_allow_html=True)
-                        with p2:
-                            st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio CT</div></div>""", unsafe_allow_html=True)
+                                # Alertas
+                                if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera de Plazo</div>""", unsafe_allow_html=True)
+                                else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
+                                
+                                if rojos_normal > 0: st.markdown(f"""<div class="alert-box alert-red">⚠️ {rojos_normal} Normales Fuera de Plazo</div>""", unsafe_allow_html=True)
+                                else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
+                                
+                                # Promedios Separados
+                                p1, p2 = st.columns(2)
+                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">P. General</div></div>""", unsafe_allow_html=True)
+                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">P. CT</div></div>""", unsafe_allow_html=True)
 
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
@@ -379,7 +404,7 @@ if files_rep_list and file_mon:
                 if filtro == "Todos": df_show = df
                 else: df_show = df[df[col_stat] == filtro]
 
-                # Métricas Tabla
+                # Métricas
                 kd1, kd2, kd3 = st.columns(3)
                 kd1.metric("📦 Vista Actual", len(df_show))
                 kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
