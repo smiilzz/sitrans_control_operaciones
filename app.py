@@ -5,10 +5,15 @@ import re
 import numpy as np
 import plotly.express as px
 
-# Configuración de página
-st.set_page_config(page_title="Sitrans Control Operaciones", layout="wide", page_icon="🚢")
+# Configuración de página: Forzamos la barra lateral ABIERTA por defecto
+st.set_page_config(
+    page_title="Sitrans Control Operaciones", 
+    layout="wide", 
+    page_icon="🚢",
+    initial_sidebar_state="expanded" 
+)
 
-# --- CSS VISUAL (ESTILOS DEFINITIVOS) ---
+# --- CSS VISUAL (SIN OCULTAR EL HEADER PARA NO PERDER EL MENÚ) ---
 st.markdown("""
     <style>
     /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
@@ -17,17 +22,7 @@ st.markdown("""
         color: #333333;
     }
     
-    /* 2. OCULTAR BARRA SUPERIOR (GITHUB/STREAMLIT) - MODO KIOSCO */
-    header[data-testid="stHeader"] {
-        visibility: hidden;
-        height: 0px;
-    }
-    /* Ajustar margen superior ya que no hay header */
-    .block-container {
-        padding-top: 1rem !important;
-    }
-
-    /* 3. Header Personalizado de Datos */
+    /* 2. Header Personalizado de Datos */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -44,7 +39,7 @@ st.markdown("""
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
 
-    /* 4. Pestañas (Tabs) */
+    /* 3. Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -66,7 +61,7 @@ st.markdown("""
         font-size: 16px !important; margin: 0;
     }
 
-    /* 5. KPI Cards */
+    /* 4. KPI Cards */
     .kpi-card {
         padding: 20px;
         border-radius: 15px;
@@ -86,7 +81,7 @@ st.markdown("""
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
 
-    /* 6. Tarjetas de Promedio (Metric Cards) */
+    /* 5. Tarjetas de Promedio (Metric Cards) */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -104,7 +99,7 @@ st.markdown("""
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
 
-    /* 7. Alertas de Texto */
+    /* 6. Alertas de Texto */
     .alert-box {
         padding: 12px;
         border-radius: 8px;
@@ -120,7 +115,7 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
 
-    /* 8. Filtros Pills */
+    /* 7. Filtros Pills */
     div[role="radiogroup"] {
         background-color: white;
         padding: 8px;
@@ -235,7 +230,11 @@ def procesar_datos_completos(files_rep_list, file_mon):
 
 # --- INTERFAZ ---
 with st.sidebar:
-    st.image("Logo.png", width=200)
+    # Ajustamos el nombre del logo a "Logo.png" (Case Sensitive)
+    c1, c2, c3 = st.columns([1, 4, 1]) 
+    with c2:
+        st.image("Logo.png", use_container_width=True) # IMPORTANTE: 'L' Mayúscula
+        
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
     file_mon = st.file_uploader("📂 2_Monitor", type=["xlsx"])
@@ -255,7 +254,7 @@ if files_rep_list and file_mon:
         fecha = df['FECHA_CONSULTA'].iloc[0] if not df.empty else "---"
 
         with c_head_izq:
-            st.title("🚢 Control de Operaciones Sitrans")
+            st.title("🚢 Control de Operaciones")
             
         st.markdown(f"""
         <div class="header-data-box">
@@ -371,8 +370,8 @@ if files_rep_list and file_mon:
                                 if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
                                 
-                                # Promedio Único Grande
-                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo OnBoard</div></div>""", unsafe_allow_html=True)
+                                # Promedio Único Grande (Centrado visualmente)
+                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Global OnBoard</div></div>""", unsafe_allow_html=True)
                             
                             else:
                                 # LÓGICA ESTÁNDAR (CONEX/DESC) - SEPARADO
@@ -390,8 +389,8 @@ if files_rep_list and file_mon:
                                 
                                 # Promedios Separados
                                 p1, p2 = st.columns(2)
-                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores Normales</div></div>""", unsafe_allow_html=True)
-                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores CT</div></div>""", unsafe_allow_html=True)
+                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">P. General</div></div>""", unsafe_allow_html=True)
+                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">P. CT</div></div>""", unsafe_allow_html=True)
 
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
@@ -406,9 +405,9 @@ if files_rep_list and file_mon:
 
                 # Métricas
                 kd1, kd2, kd3 = st.columns(3)
-                kd1.metric("📦 Total Contenedores", len(df_show))
-                kd2.metric("❄️ Contenedores Normales", len(df_show[df_show['TIPO'] == 'General']))
-                kd3.metric("⚡ Contenedores CT", len(df_show[df_show['TIPO'] == 'CT']))
+                kd1.metric("📦 Vista Actual", len(df_show))
+                kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
+                kd3.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
