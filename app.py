@@ -5,15 +5,16 @@ import re
 import numpy as np
 import plotly.express as px
 
-# Configuración de página: Forzamos la barra lateral ABIERTA por defecto
+# 1. CONFIGURACIÓN DE PÁGINA
+# 'initial_sidebar_state="expanded"' obliga a que la barra lateral esté abierta siempre.
 st.set_page_config(
     page_title="Sitrans Control Operaciones", 
     layout="wide", 
     page_icon="🚢",
-    initial_sidebar_state="expanded" 
+    initial_sidebar_state="expanded"
 )
 
-# --- CSS VISUAL (SIN OCULTAR EL HEADER PARA NO PERDER EL MENÚ) ---
+# --- CSS VISUAL (MODO KIOSCO Y ESTILOS) ---
 st.markdown("""
     <style>
     /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
@@ -22,7 +23,17 @@ st.markdown("""
         color: #333333;
     }
     
-    /* 2. Header Personalizado de Datos */
+    /* 2. OCULTAR BOTONES DE GITHUB Y MENÚ DE STREAMLIT (NUEVO) */
+    #MainMenu {visibility: hidden;} /* Oculta el menú de 3 puntos */
+    footer {visibility: hidden;}    /* Oculta 'Made with Streamlit' */
+    header {visibility: hidden;}    /* Oculta la barra superior con el botón de GitHub */
+    
+    /* Ajustamos el padding superior porque al quitar el header, el título choca arriba */
+    .block-container {
+        padding-top: 1rem !important;
+    }
+
+    /* 3. Header Personalizado de Datos */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -39,7 +50,7 @@ st.markdown("""
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
 
-    /* 3. Pestañas (Tabs) */
+    /* 4. Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -61,7 +72,7 @@ st.markdown("""
         font-size: 16px !important; margin: 0;
     }
 
-    /* 4. KPI Cards */
+    /* 5. KPI Cards */
     .kpi-card {
         padding: 20px;
         border-radius: 15px;
@@ -81,7 +92,7 @@ st.markdown("""
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
 
-    /* 5. Tarjetas de Promedio (Metric Cards) */
+    /* 6. Tarjetas de Promedio (Metric Cards) */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -99,7 +110,7 @@ st.markdown("""
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
 
-    /* 6. Alertas de Texto */
+    /* 7. Alertas de Texto */
     .alert-box {
         padding: 12px;
         border-radius: 8px;
@@ -115,7 +126,7 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
 
-    /* 7. Filtros Pills */
+    /* 8. Filtros Pills */
     div[role="radiogroup"] {
         background-color: white;
         padding: 8px;
@@ -144,7 +155,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES SOPORTE ---
+# --- FUNCIONES SOPORTE (CACHEADAS) ---
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
     if pd.isna(minutos) or minutos == 0: return ""
@@ -230,10 +241,9 @@ def procesar_datos_completos(files_rep_list, file_mon):
 
 # --- INTERFAZ ---
 with st.sidebar:
-    # Ajustamos el nombre del logo a "Logo.png" (Case Sensitive)
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
-        st.image("Logo.png", use_container_width=True) # IMPORTANTE: 'L' Mayúscula
+        st.image("Logo.png", use_container_width=True) # Tu logo ajustado
         
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
