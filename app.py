@@ -235,7 +235,7 @@ def procesar_datos_completos(files_rep_list, file_mon):
 
 # --- INTERFAZ ---
 with st.sidebar:
-    st.image("https://www.sitrans.cl/wp-content/themes/sitrans-child/img/logo-sitrans.png", width=180)
+    st.image("logo.png", width=200)
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
     file_mon = st.file_uploader("📂 2_Monitor", type=["xlsx"])
@@ -372,7 +372,7 @@ if files_rep_list and file_mon:
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
                                 
                                 # Promedio Único Grande
-                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Global OnBoard</div></div>""", unsafe_allow_html=True)
+                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo OnBoard</div></div>""", unsafe_allow_html=True)
                             
                             else:
                                 # LÓGICA ESTÁNDAR (CONEX/DESC) - SEPARADO
@@ -390,8 +390,8 @@ if files_rep_list and file_mon:
                                 
                                 # Promedios Separados
                                 p1, p2 = st.columns(2)
-                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">P. General</div></div>""", unsafe_allow_html=True)
-                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">P. CT</div></div>""", unsafe_allow_html=True)
+                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores Normales</div></div>""", unsafe_allow_html=True)
+                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores CT</div></div>""", unsafe_allow_html=True)
 
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
@@ -406,9 +406,9 @@ if files_rep_list and file_mon:
 
                 # Métricas
                 kd1, kd2, kd3 = st.columns(3)
-                kd1.metric("📦 Vista Actual", len(df_show))
-                kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
-                kd3.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
+                kd1.metric("📦 Total Contenedores", len(df_show))
+                kd2.metric("❄️ Contenedores Normales", len(df_show[df_show['TIPO'] == 'General']))
+                kd3.metric("⚡ Contenedores CT", len(df_show[df_show['TIPO'] == 'CT']))
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
