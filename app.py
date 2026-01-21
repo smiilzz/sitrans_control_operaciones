@@ -6,7 +6,7 @@ import numpy as np
 import plotly.express as px
 
 # 1. CONFIGURACIÓN DE PÁGINA
-# 'initial_sidebar_state="expanded"' obliga a que la barra lateral esté abierta siempre.
+# 'initial_sidebar_state="expanded"' obliga a que la barra lateral esté abierta siempre al iniciar.
 st.set_page_config(
     page_title="Sitrans Control Operaciones", 
     layout="wide", 
@@ -14,31 +14,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS VISUAL (MODO KIOSCO Y ESTILOS) ---
+# --- CSS VISUAL (CORREGIDO: BARRA LATERAL VISIBLE) ---
 st.markdown("""
     <style>
-    /* 1. FORZAR TEMA CLARO */
+    /* 1. FORZAR TEMA CLARO Y FONDO BLANCO */
     .stApp {
         background-color: #ffffff !important;
         color: #333333;
     }
     
-    /* 2. OCULTAR BOTONES DE GITHUB Y MENÚ DE STREAMLIT */
-    #MainMenu {visibility: hidden;} /* Oculta el menú de 3 puntos */
+    /* 2. OCULTAR MENÚS INNECESARIOS (PERO MANTENER BARRA SUPERIOR) */
+    #MainMenu {visibility: hidden;} /* Oculta el menú de 3 puntos (Settings/GitHub) */
     footer {visibility: hidden;}    /* Oculta 'Made with Streamlit' */
-    header {visibility: hidden;}    /* Oculta la barra superior con el botón de GitHub */
     
-    /* Ajustamos el padding superior porque al quitar el header, el título choca arriba */
-    .block-container {
-        padding-top: 1rem !important;
-    }
+    /* ELIMINAMOS 'header {visibility: hidden;}' PARA QUE SE VEA EL BOTÓN DEL SIDEBAR */
 
-    /* 3. Estilos del Header de Datos (Cuadro Azul) */
+    /* 3. Header Personalizado de Datos */
     .header-data-box {
         background-color: white;
         padding: 20px;
         border-radius: 12px;
-        border-left: 6px solid #003366; 
+        border-left: 6px solid #003366; /* Azul Sitrans */
         box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         margin-bottom: 25px;
         display: flex;
@@ -50,7 +46,7 @@ st.markdown("""
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
 
-    /* 4. Estilos de Pestañas (Tabs) */
+    /* 4. Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -92,7 +88,7 @@ st.markdown("""
     .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
     .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
 
-    /* 6. Tarjetas de Promedio */
+    /* 6. Tarjetas de Promedio (Metric Cards) */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -155,7 +151,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES SOPORTE (CACHEADAS) ---
+# --- FUNCIONES SOPORTE ---
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
     if pd.isna(minutos) or minutos == 0: return ""
@@ -264,7 +260,7 @@ if files_rep_list and file_mon:
         fecha = df['FECHA_CONSULTA'].iloc[0] if not df.empty else "---"
 
         with c_head_izq:
-            st.title("🚢 Control de Operaciones")
+            st.title("🚢 Control de Operaciones Sitrans")
             
         st.markdown(f"""
         <div class="header-data-box">
@@ -379,10 +375,10 @@ if files_rep_list and file_mon:
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
                                 
                                 # PROMEDIO ÚNICO CENTRADO
-                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Global OnBoard</div></div>""", unsafe_allow_html=True)
+                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo OnBoard</div></div>""", unsafe_allow_html=True)
                             
                             else:
-                                # LÓGICA ESTÁNDAR
+                                # LÓGICA ESTÁNDAR (CONEX/DESC) - SEPARADO
                                 rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
                                 rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
                                 prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
@@ -395,8 +391,8 @@ if files_rep_list and file_mon:
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
                                 
                                 p1, p2 = st.columns(2)
-                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">P. General</div></div>""", unsafe_allow_html=True)
-                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">P. CT</div></div>""", unsafe_allow_html=True)
+                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores Normales</div></div>""", unsafe_allow_html=True)
+                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio Tiempo Contenedores CT</div></div>""", unsafe_allow_html=True)
 
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
@@ -410,9 +406,9 @@ if files_rep_list and file_mon:
                 else: df_show = df[df[col_stat] == filtro]
 
                 kd1, kd2, kd3 = st.columns(3)
-                kd1.metric("📦 Vista Actual", len(df_show))
-                kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
-                kd3.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
+                kd1.metric("📦 Total Contenedores", len(df_show))
+                kd2.metric("❄️ Contenedores Normales", len(df_show[df_show['TIPO'] == 'General']))
+                kd3.metric("⚡ Contenedores CT", len(df_show[df_show['TIPO'] == 'CT']))
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
