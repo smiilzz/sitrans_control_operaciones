@@ -187,8 +187,6 @@ def cargar_excel(file, palabra_clave):
 
 # --- NUEVAS FUNCIONES PARA LÓGICA MONITOR MULTI-ARCHIVO ---
 
-# --- FUNCIONES CORREGIDAS PARA ELIMINAR DUPLICADOS DE COLUMNA ---
-
 def limpiar_y_unificar_columnas(df):
     """
     1. Normaliza nombres.
@@ -203,17 +201,11 @@ def limpiar_y_unificar_columnas(df):
     df = df.loc[:, ~df.columns.duplicated()]
     
     # 3. Fusión inteligente de columnas de sensores (ej: SENSOR1_TMP vs SENSOR1_TMP.1)
-    # Nota: Como ya eliminamos duplicados exactos arriba, ahora buscamos los que Pandas renombró con sufijos.
     for col_base in COLS_SENSORES:
-        # Pandas suele renombrar duplicados originales como NOMBRE.1, NOMBRE.2
         col_sufijo = f"{col_base}.1"
-        
-        # Verificar si existe la columna base y su versión con sufijo
-        # Usamos checkeo seguro: si col_base no está, no hacemos nada.
         if col_base in df.columns and col_sufijo in df.columns:
             # Rellenar vacíos de la base con la info del sufijo
             df[col_base] = df[col_base].fillna(df[col_sufijo])
-            # Borrar la columna sobrante
             df = df.drop(columns=[col_sufijo])
             
     return df
@@ -248,12 +240,10 @@ def procesar_batch_monitores(lista_archivos):
             
             # Validar que exista la columna clave
             if 'UNIDAD' not in df_nuevo.columns:
-                # Intento de rescate: A veces se llama 'ID', 'CONTAINER', etc.
-                # Aquí asumimos que si no está, el archivo no sirve.
                 st.warning(f"Archivo ignorado: No se encontró la columna 'UNIDAD' (encabezados en fila 4).")
                 continue
 
-            # Ahora es seguro usar drop_duplicates porque 'limpiar...' garantizó que solo hay una columna UNIDAD
+            # Ahora es seguro usar drop_duplicates
             df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
             df_nuevo = df_nuevo.set_index('UNIDAD')
             
@@ -278,10 +268,6 @@ def procesar_batch_monitores(lista_archivos):
                 break
         return "CT" if es_ct else "General"
 
-    # Reset index para que UNIDAD sea columna accesible por apply
-    # (Aunque apply axis=1 accede por nombre, es más limpio trabajar sin índice a veces)
-    # Pero aquí df_maestro tiene índice UNIDAD.
-    
     df_maestro['TIPO_CONTENEDOR'] = df_maestro.apply(es_reefer_ct, axis=1)
 
     try:
@@ -291,69 +277,6 @@ def procesar_batch_monitores(lista_archivos):
     except Exception as e:
         st.warning(f"No se pudo guardar historial: {e}")
         return df_maestro.reset_index()
-def procesar_batch_monitores(lista_archivos):
-    """
-    Procesa una LISTA de archivos monitor y los fusiona secuencialmente
-    con el maestro histórico.
-    """
-    # 1. Cargar el Maestro existente (si hay)
-    if os.path.exists(ARCHIVO_MAESTRO):
-        try:
-            df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
-            if 'UNIDAD' in df_maestro.columns:
-                df_maestro = df_maestro.set_index('UNIDAD')
-            else:
-                df_maestro = pd.DataFrame()
-        except:
-            df_maestro = pd.DataFrame()
-    else:
-        df_maestro = pd.DataFrame()
-
-    # 2. Iterar sobre cada archivo subido y fusionarlo
-    for archivo in lista_archivos:
-        try:
-            # Leer asumiendo encabezados en fila 4 (header=3)
-            archivo.seek(0) # Reiniciar puntero por seguridad
-            df_nuevo = pd.read_excel(archivo, header=3)
-            
-            # Limpieza
-            df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
-            
-            if 'UNIDAD' in df_nuevo.columns:
-                df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
-                df_nuevo = df_nuevo.set_index('UNIDAD')
-                
-                if df_maestro.empty:
-                    df_maestro = df_nuevo
-                else:
-                    # combine_first: Prioriza df_nuevo. Si df_nuevo tiene hueco, usa df_maestro.
-                    df_maestro = df_nuevo.combine_first(df_maestro)
-        except Exception as e:
-            st.error(f"Error procesando uno de los archivos monitor: {e}")
-
-    # 3. Determinar TIPO (CT/Normal) sobre la data final fusionada
-    if df_maestro.empty:
-        return None
-
-    def es_reefer_ct(row):
-        es_ct = False
-        for col in COLS_SENSORES:
-            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
-                es_ct = True
-                break
-        return "CT" if es_ct else "General"
-
-    df_maestro['TIPO_CONTENEDOR'] = df_maestro.apply(es_reefer_ct, axis=1)
-
-    # 4. Guardar resultado final
-    try:
-        df_guardar = df_maestro.reset_index()
-        df_guardar.to_excel(ARCHIVO_MAESTRO, index=False)
-        return df_guardar
-    except Exception as e:
-        st.warning(f"No se pudo guardar el histórico: {e}")
-        return df_maestro.reset_index()
-
 
 @st.cache_data(show_spinner="Procesando datos...")
 def procesar_datos_completos(files_rep_list, files_mon_list):
@@ -407,7 +330,7 @@ with st.sidebar:
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
     
-    # CAMBIO IMPORTANTE: accept_multiple_files=True para Monitor
+    # ACEPTAR MÚLTIPLES ARCHIVOS
     files_mon_list = st.file_uploader("📂 2_Monitor (Múltiples)", type=["xlsx"], accept_multiple_files=True)
     
     if st.button("Borrar Historial Monitor"):
@@ -417,7 +340,6 @@ with st.sidebar:
         else:
             st.info("No hay historial.")
 
-# CAMBIO LÓGICO: Verificamos si hay lista de monitores, no solo un archivo
 if files_rep_list and files_mon_list:
     
     df_master = procesar_datos_completos(files_rep_list, files_mon_list)
