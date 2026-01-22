@@ -28,6 +28,8 @@ st.markdown("""
     <style>
     .stApp { background-color: #ffffff !important; color: #333333; }
     .block-container { padding-top: 1rem !important; }
+    
+    /* Header Data Box */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -43,6 +45,8 @@ st.markdown("""
     .header-item { text-align: center; }
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
+    
+    /* Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -60,6 +64,8 @@ st.markdown("""
         border: 1px solid #003366;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
+    
+    /* Cards */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -76,6 +82,8 @@ st.markdown("""
     }
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
+    
+    /* Alerts */
     .alert-box {
         padding: 12px;
         border-radius: 8px;
@@ -90,6 +98,8 @@ st.markdown("""
     }
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
+    
+    /* Radio Buttons */
     div[role="radiogroup"] {
         background-color: white;
         padding: 8px;
@@ -406,27 +416,40 @@ if files_rep_list and files_mon_list:
                         st.plotly_chart(fig, use_container_width=True)
 
                     with k2:
-                        # --- NUEVO: RELOJ SEMÁFORO KPI ESPECÍFICO ---
+                        # --- RELOJ SEMÁFORO (TIPO VELOCÍMETRO) MEJORADO ---
                         st.subheader("⏰ Cumplimiento KPI")
                         fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge+number",
                             value = pct,
-                            number = {'suffix': "%", 'font': {'size': 30}},
+                            number = {
+                                'suffix': "%", 
+                                'valueformat': ".1f",  # Un decimal (ej: 95.5%)
+                                'font': {'size': 45, 'weight': 'bold', 'color': '#003366'}
+                            },
                             domain = {'x': [0, 1], 'y': [0, 1]},
                             gauge = {
                                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                                'bar': {'color': "black", 'thickness': 0.03},
+                                # Truco: Hacemos la barra de progreso invisible
+                                'bar': {'color': "rgba(0,0,0,0)"},
                                 'bgcolor': "white",
                                 'borderwidth': 2,
-                                'bordercolor': "gray",
+                                'bordercolor': "#f0f0f0",
+                                # Pasos estáticos (Rojo/Amarillo/Verde) siempre visibles
                                 'steps': [
                                     {'range': [0, 33.33], 'color': "#dc3545"},
                                     {'range': [33.33, 66.66], 'color': "#ffc107"},
                                     {'range': [66.66, 100], 'color': "#28a745"}
                                 ],
+                                # Usamos el THRESHOLD como la "AGUJA" o flecha
+                                'threshold': {
+                                    'line': {'color': "black", 'width': 8}, 
+                                    'thickness': 0.8, # Largo de la aguja (casi todo el radio)
+                                    'value': pct
+                                }
                             }
                         ))
-                        fig_gauge.update_layout(height=220, margin=dict(t=30,b=10,l=20,r=20))
+                        # Margen ajustado para centrar
+                        fig_gauge.update_layout(height=240, margin=dict(t=30,b=10,l=25,r=25))
                         st.plotly_chart(fig_gauge, use_container_width=True)
 
                     with k3:
