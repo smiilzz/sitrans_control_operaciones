@@ -187,45 +187,110 @@ def cargar_excel(file, palabra_clave):
 
 # --- NUEVAS FUNCIONES PARA LÓGICA MONITOR MULTI-ARCHIVO ---
 
+# --- FUNCIONES CORREGIDAS PARA ELIMINAR DUPLICADOS DE COLUMNA ---
+
 def limpiar_y_unificar_columnas(df):
     """
-    Fusiona columnas duplicadas de sensores y elimina duplicados de otras columnas
-    para evitar errores de 'DataFrame object has no attribute dtype'.
+    1. Normaliza nombres.
+    2. ELIMINA columnas duplicadas (ej: dos columnas 'UNIDAD').
+    3. Fusiona columnas de sensores duplicadas.
     """
-    # 1. Normalizar nombres a mayúsculas
+    # 1. Normalizar nombres a mayúsculas y quitar espacios
     df.columns = df.columns.str.strip().str.upper()
     
-    # 2. FUSIONAR SENSORES (Manejo robusto de duplicados)
-    for col_base in COLS_SENSORES:
-        # CASO A: Duplicados exactos de nombre (Generados por la normalización)
-        # Si hay dos columnas que se llaman "SENSOR1_TMP", las fusionamos.
-        if list(df.columns).count(col_base) > 1:
-            # Extraemos todas las columnas con ese nombre (devuelve un DataFrame)
-            df_dups = df[col_base]
-            
-            # Combinamos los valores: llenamos los vacíos de la primera con los de la segunda, etc.
-            # bfill(axis=1) rellena horizontalmente. iloc[:, 0] toma la primera columna resultante.
-            col_fusionada = df_dups.bfill(axis=1).iloc[:, 0]
-            
-            # Eliminamos las columnas duplicadas originales del DF principal
-            # (drop borrará todas las columnas con ese nombre)
-            df = df.drop(columns=[col_base])
-            
-            # Reinsertamos la columna ya fusionada y limpia
-            df[col_base] = col_fusionada
-
-        # CASO B: Duplicados con sufijo .1 (Generados por Pandas al leer)
-        col_sufijo = f"{col_base}.1"
-        if col_base in df.columns and col_sufijo in df.columns:
-            df[col_base] = df[col_base].fillna(df[col_sufijo])
-            df = df.drop(columns=[col_sufijo])
-
-    # 3. LIMPIEZA FINAL DE DUPLICADOS (CRÍTICO)
-    # Si quedan otras columnas duplicadas (ej: dos columnas 'UNIDAD'), 
-    # conservamos solo la primera para evitar que el código explote después.
+    # 2. PASO CRÍTICO: Eliminar duplicados EXACTOS de columnas inmediatamente
+    # (Si hay dos columnas 'UNIDAD', nos quedamos solo con la primera para evitar el crash)
     df = df.loc[:, ~df.columns.duplicated()]
     
+    # 3. Fusión inteligente de columnas de sensores (ej: SENSOR1_TMP vs SENSOR1_TMP.1)
+    # Nota: Como ya eliminamos duplicados exactos arriba, ahora buscamos los que Pandas renombró con sufijos.
+    for col_base in COLS_SENSORES:
+        # Pandas suele renombrar duplicados originales como NOMBRE.1, NOMBRE.2
+        col_sufijo = f"{col_base}.1"
+        
+        # Verificar si existe la columna base y su versión con sufijo
+        # Usamos checkeo seguro: si col_base no está, no hacemos nada.
+        if col_base in df.columns and col_sufijo in df.columns:
+            # Rellenar vacíos de la base con la info del sufijo
+            df[col_base] = df[col_base].fillna(df[col_sufijo])
+            # Borrar la columna sobrante
+            df = df.drop(columns=[col_sufijo])
+            
     return df
+
+def procesar_batch_monitores(lista_archivos):
+    """
+    Procesa lista de archivos monitor fusionándolos con el histórico.
+    """
+    # 1. Cargar el Maestro existente
+    if os.path.exists(ARCHIVO_MAESTRO):
+        try:
+            df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
+            if 'UNIDAD' in df_maestro.columns:
+                df_maestro = df_maestro.set_index('UNIDAD')
+            else:
+                df_maestro = pd.DataFrame()
+        except:
+            df_maestro = pd.DataFrame()
+    else:
+        df_maestro = pd.DataFrame()
+
+    # 2. Iterar sobre archivos subidos
+    for archivo in lista_archivos:
+        try:
+            archivo.seek(0)
+            # Leer header=3 (Fila 4)
+            df_nuevo = pd.read_excel(archivo, header=3)
+            
+            # --- CORRECCIÓN AQUÍ ---
+            # Aplicamos la limpieza que elimina columnas duplicadas ANTES de usar 'UNIDAD'
+            df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
+            
+            # Validar que exista la columna clave
+            if 'UNIDAD' not in df_nuevo.columns:
+                # Intento de rescate: A veces se llama 'ID', 'CONTAINER', etc.
+                # Aquí asumimos que si no está, el archivo no sirve.
+                st.warning(f"Archivo ignorado: No se encontró la columna 'UNIDAD' (encabezados en fila 4).")
+                continue
+
+            # Ahora es seguro usar drop_duplicates porque 'limpiar...' garantizó que solo hay una columna UNIDAD
+            df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
+            df_nuevo = df_nuevo.set_index('UNIDAD')
+            
+            if df_maestro.empty:
+                df_maestro = df_nuevo
+            else:
+                # combine_first: Prioriza df_nuevo, rellena huecos con df_maestro
+                df_maestro = df_nuevo.combine_first(df_maestro)
+                
+        except Exception as e:
+            st.error(f"Error procesando archivo {archivo.name}: {e}")
+
+    # 3. Lógica final CT/Normal y Guardado
+    if df_maestro.empty:
+        return None
+
+    def es_reefer_ct(row):
+        es_ct = False
+        for col in COLS_SENSORES:
+            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
+                es_ct = True
+                break
+        return "CT" if es_ct else "General"
+
+    # Reset index para que UNIDAD sea columna accesible por apply
+    # (Aunque apply axis=1 accede por nombre, es más limpio trabajar sin índice a veces)
+    # Pero aquí df_maestro tiene índice UNIDAD.
+    
+    df_maestro['TIPO_CONTENEDOR'] = df_maestro.apply(es_reefer_ct, axis=1)
+
+    try:
+        df_guardar = df_maestro.reset_index()
+        df_guardar.to_excel(ARCHIVO_MAESTRO, index=False)
+        return df_guardar
+    except Exception as e:
+        st.warning(f"No se pudo guardar historial: {e}")
+        return df_maestro.reset_index()
 def procesar_batch_monitores(lista_archivos):
     """
     Procesa una LISTA de archivos monitor y los fusiona secuencialmente
