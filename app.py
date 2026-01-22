@@ -16,7 +16,6 @@ st.set_page_config(
 )
 
 # --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
-# [Minutos_Verde, Minutos_Amarillo]
 UMBRALES_SEMAFORO = {
     "Conexión a Stacking":       [15, 30],  
     "Desconexión para Embarque": [20, 45],  
@@ -29,7 +28,6 @@ st.markdown("""
     .stApp { background-color: #ffffff !important; color: #333333; }
     .block-container { padding-top: 1rem !important; }
     
-    /* Header Data Box */
     .header-data-box {
         background-color: white;
         padding: 20px;
@@ -46,7 +44,6 @@ st.markdown("""
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
     
-    /* Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -65,7 +62,6 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
-    /* Cards */
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -83,7 +79,6 @@ st.markdown("""
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
     
-    /* Alerts */
     .alert-box {
         padding: 12px;
         border-radius: 8px;
@@ -99,7 +94,6 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
     
-    /* Radio Buttons */
     div[role="radiogroup"] {
         background-color: white;
         padding: 8px;
@@ -392,7 +386,6 @@ if files_rep_list and files_mon_list:
                     conteos.columns = ['Color', 'Cantidad']
 
                 if not df_activo.empty:
-                    # Lógica de cumplimiento (KPI)
                     if proceso == "Conexión OnBoard": 
                         df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
@@ -404,7 +397,6 @@ if files_rep_list and files_mon_list:
                     
                     pct = (df_activo['Cumple'].sum() / len(df_activo)) * 100
 
-                    # --- DISEÑO EN 3 COLUMNAS ---
                     k1, k2, k3 = st.columns([1, 1, 1], gap="medium")
 
                     with k1: 
@@ -413,13 +405,11 @@ if files_rep_list and files_mon_list:
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', color_discrete_map=color_map, hole=0.6)
                         fig.update_layout(showlegend=True, margin=dict(t=0,b=0,l=0,r=0), height=200, legend=dict(orientation="h", y=-0.1))
-                        st.plotly_chart(fig, use_container_width=True)
+                        # AQUÍ LA CORRECCIÓN: Agregar clave única al gráfico
+                        st.plotly_chart(fig, use_container_width=True, key=f"pie_{proceso}")
 
                     with k2:
-                        # --- RELOJ SEMÁFORO (TIPO VELOCÍMETRO) CORREGIDO ---
-                        st.subheader("⏰ Cumplimiento KPI")
-                        
-                        # Definimos el color del texto según el valor para darle más énfasis
+                        st.subheader("🕜 Cumplimiento KPI")
                         color_texto = "#28a745" if pct >= 66.6 else "#ffc107" if pct >= 33.3 else "#dc3545"
                         
                         fig_gauge = go.Figure(go.Indicator(
@@ -428,33 +418,30 @@ if files_rep_list and files_mon_list:
                             number = {
                                 'suffix': "%", 
                                 'valueformat': ".1f",
-                                # Ajustamos tamaño para evitar cortes y usamos el color del estado
                                 'font': {'size': 38, 'weight': 'bold', 'color': color_texto}
                             },
                             domain = {'x': [0, 1], 'y': [0, 1]},
                             gauge = {
                                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                                # Barra de progreso invisible (el truco para solo ver la aguja)
                                 'bar': {'color': "rgba(0,0,0,0)"},
                                 'bgcolor': "white",
                                 'borderwidth': 2,
                                 'bordercolor': "#f0f0f0",
                                 'steps': [
-                                    {'range': [0, 33.33], 'color': "#dc3545"},   # Rojo
-                                    {'range': [33.33, 66.66], 'color': "#ffc107"}, # Amarillo
-                                    {'range': [66.66, 100], 'color': "#28a745"}   # Verde
+                                    {'range': [0, 33.33], 'color': "#dc3545"},
+                                    {'range': [33.33, 66.66], 'color': "#ffc107"},
+                                    {'range': [66.66, 100], 'color': "#28a745"}
                                 ],
-                                # LA AGUJA (Flecha): Más ancha y negra
                                 'threshold': {
-                                    'line': {'color': "black", 'width': 12}, # Más gruesa
-                                    'thickness': 0.8, # Largo de la aguja
+                                    'line': {'color': "black", 'width': 12}, 
+                                    'thickness': 0.8,
                                     'value': pct
                                 }
                             }
                         ))
-                        # MÁRGENES AUMENTADOS: l=40, r=40 evita que se corte el texto a los lados
                         fig_gauge.update_layout(height=230, margin=dict(t=20, b=20, l=45, r=45))
-                        st.plotly_chart(fig_gauge, use_container_width=True)
+                        # AQUÍ LA CORRECCIÓN: Agregar clave única al gráfico
+                        st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{proceso}")
 
                     with k3:
                         st.subheader("📊 Métricas")
