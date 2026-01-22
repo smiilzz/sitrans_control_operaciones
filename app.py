@@ -185,7 +185,7 @@ def cargar_excel(file, palabra_clave):
         return None
     except: return None
 
-# --- NUEVAS FUNCIONES PARA LÓGICA MONITOR MULTI-ARCHIVO ---
+# --- FUNCIONES LÓGICA MONITOR (CORREGIDAS) ---
 
 def limpiar_y_unificar_columnas(df):
     """
@@ -193,28 +193,21 @@ def limpiar_y_unificar_columnas(df):
     2. ELIMINA columnas duplicadas (ej: dos columnas 'UNIDAD').
     3. Fusiona columnas de sensores duplicadas.
     """
-    # 1. Normalizar nombres a mayúsculas y quitar espacios
     df.columns = df.columns.str.strip().str.upper()
     
-    # 2. PASO CRÍTICO: Eliminar duplicados EXACTOS de columnas inmediatamente
-    # (Si hay dos columnas 'UNIDAD', nos quedamos solo con la primera para evitar el crash)
+    # Eliminar duplicados EXACTOS de columnas inmediatamente
     df = df.loc[:, ~df.columns.duplicated()]
     
-    # 3. Fusión inteligente de columnas de sensores (ej: SENSOR1_TMP vs SENSOR1_TMP.1)
+    # Fusión inteligente de columnas de sensores
     for col_base in COLS_SENSORES:
         col_sufijo = f"{col_base}.1"
         if col_base in df.columns and col_sufijo in df.columns:
-            # Rellenar vacíos de la base con la info del sufijo
             df[col_base] = df[col_base].fillna(df[col_sufijo])
             df = df.drop(columns=[col_sufijo])
             
     return df
 
 def procesar_batch_monitores(lista_archivos):
-    """
-    Procesa lista de archivos monitor fusionándolos con el histórico.
-    """
-    # 1. Cargar el Maestro existente
     if os.path.exists(ARCHIVO_MAESTRO):
         try:
             df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
@@ -227,38 +220,28 @@ def procesar_batch_monitores(lista_archivos):
     else:
         df_maestro = pd.DataFrame()
 
-    # 2. Iterar sobre archivos subidos
     for archivo in lista_archivos:
         try:
             archivo.seek(0)
-            # Leer header=3 (Fila 4)
             df_nuevo = pd.read_excel(archivo, header=3)
-            
-            # --- CORRECCIÓN AQUÍ ---
-            # Aplicamos la limpieza que elimina columnas duplicadas ANTES de usar 'UNIDAD'
             df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
             
-            # Validar que exista la columna clave
             if 'UNIDAD' not in df_nuevo.columns:
-                st.warning(f"Archivo ignorado: No se encontró la columna 'UNIDAD' (encabezados en fila 4).")
+                st.warning(f"Archivo ignorado: No se encontró la columna 'UNIDAD' en fila 4.")
                 continue
 
-            # Ahora es seguro usar drop_duplicates
             df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
             df_nuevo = df_nuevo.set_index('UNIDAD')
             
             if df_maestro.empty:
                 df_maestro = df_nuevo
             else:
-                # combine_first: Prioriza df_nuevo, rellena huecos con df_maestro
                 df_maestro = df_nuevo.combine_first(df_maestro)
                 
         except Exception as e:
             st.error(f"Error procesando archivo {archivo.name}: {e}")
 
-    # 3. Lógica final CT/Normal y Guardado
-    if df_maestro.empty:
-        return None
+    if df_maestro.empty: return None
 
     def es_reefer_ct(row):
         es_ct = False
@@ -280,7 +263,6 @@ def procesar_batch_monitores(lista_archivos):
 
 @st.cache_data(show_spinner="Procesando datos...")
 def procesar_datos_completos(files_rep_list, files_mon_list):
-    # 1. PROCESAR REPORTES
     lista_dfs = []
     for archivo_rep in files_rep_list:
         meta = extraer_metadatos(archivo_rep)
@@ -297,14 +279,11 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
     if not lista_dfs: return None
     df_rep = pd.concat(lista_dfs, ignore_index=True)
     
-    # 2. PROCESAR LISTA DE MONITORES
     df_mon_data = procesar_batch_monitores(files_mon_list)
-    
     if df_mon_data is None: 
         st.warning("No se pudo procesar ningún archivo monitor válido.")
         return None
     
-    # 3. MERGE FINAL
     df_master = pd.merge(df_rep, df_mon_data, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
     
     if 'TIPO_CONTENEDOR' in df_master.columns:
@@ -322,26 +301,20 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
-        try:
-            st.image("Logo.png", use_container_width=True)
-        except:
-            st.title("SITRANS")
+        try: st.image("Logo.png", use_container_width=True)
+        except: st.title("SITRANS")
         
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
-    
-    # ACEPTAR MÚLTIPLES ARCHIVOS
     files_mon_list = st.file_uploader("📂 2_Monitor (Múltiples)", type=["xlsx"], accept_multiple_files=True)
     
     if st.button("Borrar Historial Monitor"):
         if os.path.exists(ARCHIVO_MAESTRO):
             os.remove(ARCHIVO_MAESTRO)
             st.success("Historial borrado.")
-        else:
-            st.info("No hay historial.")
+        else: st.info("No hay historial.")
 
 if files_rep_list and files_mon_list:
-    
     df_master = procesar_datos_completos(files_rep_list, files_mon_list)
 
     if df_master is not None:
@@ -365,15 +338,26 @@ if files_rep_list and files_mon_list:
         </div>
         """, unsafe_allow_html=True)
         
-        # --- CÁLCULOS GLOBALES (Sin cambios) ---
+        # --- NUEVOS NOMBRES DE VISTAS (TABS) ---
         parejas = {
-            "Conexión": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
-            "Desconexión": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
-            "OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
+            "Conexión a Stacking": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
+            "Desconexión para Embarque": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
+            "Conexión OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
         }
+
+        # --- MAPA DE NOMBRES DE ESTADO PERSONALIZADOS ---
+        mapa_estados = {
+            "Conexión a Stacking": "Conectado",
+            "Desconexión para Embarque": "Desconectado",
+            "Conexión OnBoard": "Conectado a Bordo"
+        }
+
         ahora = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
 
         for proceso, cols in parejas.items():
+            # Obtenemos el nombre específico de "Finalizado" para este proceso
+            label_fin = mapa_estados[proceso]
+            
             df[f"Estado_{proceso}"] = "Sin Solicitud"
             df[f"Min_{proceso}"] = 0.0
             
@@ -383,10 +367,11 @@ if files_rep_list and files_mon_list:
                     (df[cols["Ini"]].notna()) & (df[cols["Fin"]].isna()),  
                     (df[cols["Ini"]].isna())                            
                 ]
-                df[f"Estado_{proceso}"] = np.select(cond, ["Finalizado", "Pendiente", "Sin Solicitud"], default="Sin Solicitud")
+                # AQUI USAMOS EL NUEVO NOMBRE DE ESTADO (label_fin)
+                df[f"Estado_{proceso}"] = np.select(cond, [label_fin, "Pendiente", "Sin Solicitud"], default="Sin Solicitud")
                 
                 col_min = f"Min_{proceso}"
-                mask_fin = df[f"Estado_{proceso}"] == "Finalizado"
+                mask_fin = df[f"Estado_{proceso}"] == label_fin
                 
                 diff_minutos = (df.loc[mask_fin, cols["Fin"]] - df.loc[mask_fin, cols["Ini"]]).dt.total_seconds() / 60
                 df.loc[mask_fin, col_min] = diff_minutos.clip(lower=0) 
@@ -406,7 +391,8 @@ if files_rep_list and files_mon_list:
             ]
             df[f"Semaforo_{proceso}"] = np.select(cond_sem, ['Verde', 'Amarillo', 'Rojo'], default='Rojo')
 
-        tab1, tab2, tab3 = st.tabs(["🔌 CONEXIÓN", "🔋 DESCONEXIÓN", "🚢 ONBOARD"])
+        # --- TABS CON NUEVOS NOMBRES ---
+        tab1, tab2, tab3 = st.tabs(["🔌 CONEXIÓN A STACKING", "🔋 DESCONEXIÓN EMBARQUE", "🚢 CONEXIÓN ONBOARD"])
 
         def render_tab(tab, proceso):
             with tab:
@@ -415,7 +401,11 @@ if files_rep_list and files_mon_list:
                 col_min = f"Min_{proceso}"
                 col_sem = f"Semaforo_{proceso}"
                 
-                df_activo = df[df[col_stat].isin(["Finalizado", "Pendiente"])].copy()
+                # Recuperamos el nombre de estado "Finalizado" correcto
+                label_fin = mapa_estados[proceso]
+                
+                # Filtramos usando el nuevo nombre
+                df_activo = df[df[col_stat].isin([label_fin, "Pendiente"])].copy()
                 
                 conteos = pd.DataFrame()
                 if not df_activo.empty:
@@ -423,7 +413,9 @@ if files_rep_list and files_mon_list:
                     conteos.columns = ['Color', 'Cantidad']
 
                 if not df_activo.empty:
-                    if proceso == "OnBoard": df_activo['Cumple'] = df_activo[col_min] <= 30
+                    # Lógica KPI (Conexión OnBoard es especial)
+                    if proceso == "Conexión OnBoard": 
+                        df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
                         cond_cumple = [
                             (df_activo['TIPO'] == 'CT') & (df_activo[col_min] <= 30),
@@ -437,9 +429,7 @@ if files_rep_list and files_mon_list:
                         st.subheader("🚦 Semáforo Tiempos")
                         color_map = {'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
-                                     color='Color', 
-                                     color_discrete_map=color_map, 
-                                     hole=0.6)
+                                     color='Color', color_discrete_map=color_map, hole=0.6)
                         fig.update_layout(showlegend=True, margin=dict(t=10,b=10,l=10,r=10), height=200, legend=dict(orientation="h", y=-0.1))
                         st.plotly_chart(fig, use_container_width=True)
 
@@ -453,12 +443,12 @@ if files_rep_list and files_mon_list:
                             st.markdown(f"""<div class="kpi-card {bg_color}"><p class="kpi-value">{pct:.1f}%</p><p class="kpi-label">CUMPLIMIENTO KPI</p></div>""", unsafe_allow_html=True)
                         
                         with k2:
-                            if proceso == "OnBoard":
+                            if proceso == "Conexión OnBoard":
                                 prom_global = df_activo[col_min].mean()
                                 rojos_total = len(df_activo[~df_activo['Cumple']])
                                 if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
                                 else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
-                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo OnBoard</div></div>""", unsafe_allow_html=True)
+                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo</div></div>""", unsafe_allow_html=True)
                             else:
                                 rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
                                 rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
@@ -478,7 +468,8 @@ if files_rep_list and files_mon_list:
 
                 st.divider()
 
-                filtro_estado = st.radio(f"f_{proceso}", ["Todos", "Finalizado", "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
+                # Filtro con los NUEVOS NOMBRES
+                filtro_estado = st.radio(f"f_{proceso}", ["Todos", label_fin, "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
                 if filtro_estado == "Todos": df_show = df.copy()
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
@@ -500,10 +491,11 @@ if files_rep_list and files_mon_list:
                     val = df.loc[row.name, col_min]
                     stt = df.loc[row.name, col_stat]
                     est = [''] * len(row)
-                    if stt in ["Finalizado", "Pendiente"] and pd.notna(val) and val >= 0:
+                    # Colorear si es Pendiente O si es el Estado Finalizado específico (label_fin)
+                    if stt in [label_fin, "Pendiente"] and pd.notna(val) and val >= 0:
                         c = "#d4edda" if val<=15 else "#fff3cd" if val<=30 else "#f8d7da"
                         est[4] = f"background-color: {c}; font-weight: bold; color: #333;"
-                        if stt == "Finalizado": est[2] = f"background-color: {c}; font-weight: bold; color: #333;"
+                        if stt == label_fin: est[2] = f"background-color: {c}; font-weight: bold; color: #333;"
                     return est
 
                 cols_ver = ['CONTENEDOR', 'TIPO', f"Ver_Tiempo_{proceso}", col_stat, f"Ver_Trans_{proceso}"]
@@ -511,9 +503,10 @@ if files_rep_list and files_mon_list:
                 df_dsp.columns = ['Contenedor', 'Tipo', 'Tiempo', 'Estado', 'Minutos Transcurridos']
                 st.dataframe(df_dsp.style.apply(pintar, axis=1).format({"Minutos Transcurridos": "{:.1f}"}), use_container_width=True, height=400)
 
-        render_tab(tab1, "Conexión")
-        render_tab(tab2, "Desconexión")
-        render_tab(tab3, "OnBoard")
+        # LLAMADAS CON LOS NUEVOS NOMBRES DE CLAVE
+        render_tab(tab1, "Conexión a Stacking")
+        render_tab(tab2, "Desconexión para Embarque")
+        render_tab(tab3, "Conexión OnBoard")
 
         st.divider()
         buffer = io.BytesIO()
