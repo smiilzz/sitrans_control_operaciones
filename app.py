@@ -408,7 +408,7 @@ if files_rep_list and files_mon_list:
                     k1, k2, k3 = st.columns([1, 1, 1], gap="medium")
 
                     with k1: 
-                        st.subheader("🚦 Distribución")
+                        st.subheader("🚦 Distribución Contenedores")
                         color_map = {'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', color_discrete_map=color_map, hole=0.6)
@@ -416,40 +416,44 @@ if files_rep_list and files_mon_list:
                         st.plotly_chart(fig, use_container_width=True)
 
                     with k2:
-                        # --- RELOJ SEMÁFORO (TIPO VELOCÍMETRO) MEJORADO ---
+                        # --- RELOJ SEMÁFORO (TIPO VELOCÍMETRO) CORREGIDO ---
                         st.subheader("⏰ Cumplimiento KPI")
+                        
+                        # Definimos el color del texto según el valor para darle más énfasis
+                        color_texto = "#28a745" if pct >= 66.6 else "#ffc107" if pct >= 33.3 else "#dc3545"
+                        
                         fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge+number",
                             value = pct,
                             number = {
                                 'suffix': "%", 
-                                'valueformat': ".1f",  # Un decimal (ej: 95.5%)
-                                'font': {'size': 45, 'weight': 'bold', 'color': '#003366'}
+                                'valueformat': ".1f",
+                                # Ajustamos tamaño para evitar cortes y usamos el color del estado
+                                'font': {'size': 38, 'weight': 'bold', 'color': color_texto}
                             },
                             domain = {'x': [0, 1], 'y': [0, 1]},
                             gauge = {
                                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                                # Truco: Hacemos la barra de progreso invisible
+                                # Barra de progreso invisible (el truco para solo ver la aguja)
                                 'bar': {'color': "rgba(0,0,0,0)"},
                                 'bgcolor': "white",
                                 'borderwidth': 2,
                                 'bordercolor': "#f0f0f0",
-                                # Pasos estáticos (Rojo/Amarillo/Verde) siempre visibles
                                 'steps': [
-                                    {'range': [0, 33.33], 'color': "#dc3545"},
-                                    {'range': [33.33, 66.66], 'color': "#ffc107"},
-                                    {'range': [66.66, 100], 'color': "#28a745"}
+                                    {'range': [0, 33.33], 'color': "#dc3545"},   # Rojo
+                                    {'range': [33.33, 66.66], 'color': "#ffc107"}, # Amarillo
+                                    {'range': [66.66, 100], 'color': "#28a745"}   # Verde
                                 ],
-                                # Usamos el THRESHOLD como la "AGUJA" o flecha
+                                # LA AGUJA (Flecha): Más ancha y negra
                                 'threshold': {
-                                    'line': {'color': "black", 'width': 8}, 
-                                    'thickness': 0.8, # Largo de la aguja (casi todo el radio)
+                                    'line': {'color': "black", 'width': 12}, # Más gruesa
+                                    'thickness': 0.8, # Largo de la aguja
                                     'value': pct
                                 }
                             }
                         ))
-                        # Margen ajustado para centrar
-                        fig_gauge.update_layout(height=240, margin=dict(t=30,b=10,l=25,r=25))
+                        # MÁRGENES AUMENTADOS: l=40, r=40 evita que se corte el texto a los lados
+                        fig_gauge.update_layout(height=230, margin=dict(t=20, b=20, l=45, r=45))
                         st.plotly_chart(fig_gauge, use_container_width=True)
 
                     with k3:
