@@ -4,6 +4,7 @@ import io
 import re
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import os
 
 # 1. CONFIGURACIÓN DE PÁGINA
@@ -13,6 +14,17 @@ st.set_page_config(
     page_icon="🚢",
     initial_sidebar_state="expanded"
 )
+
+# --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
+# Define aquí hasta qué minuto es VERDE y hasta cuál es AMARILLO.
+# Lo que supere el segundo número será ROJO.
+# Formato: [Minutos_Limite_Verde, Minutos_Limite_Amarillo]
+
+UMBRALES_SEMAFORO = {
+    "Conexión a Stacking":     [15, 30],  # Verde <= 15, Amarillo 15-30, Rojo > 30
+    "Desconexión para Embarque": [20, 45],  # Ejemplo: Un poco más holgado
+    "Conexión OnBoard":        [15, 30]   # Igual al estándar
+}
 
 # --- CSS VISUAL (ESTÉTICA) ---
 st.markdown("""
@@ -190,15 +202,12 @@ def cargar_excel(file, palabra_clave):
 def limpiar_y_unificar_columnas(df):
     """
     1. Normaliza nombres.
-    2. ELIMINA columnas duplicadas (ej: dos columnas 'UNIDAD').
+    2. ELIMINA columnas duplicadas.
     3. Fusiona columnas de sensores duplicadas.
     """
     df.columns = df.columns.str.strip().str.upper()
-    
-    # Eliminar duplicados EXACTOS de columnas inmediatamente
     df = df.loc[:, ~df.columns.duplicated()]
     
-    # Fusión inteligente de columnas de sensores
     for col_base in COLS_SENSORES:
         col_sufijo = f"{col_base}.1"
         if col_base in df.columns and col_sufijo in df.columns:
@@ -338,14 +347,13 @@ if files_rep_list and files_mon_list:
         </div>
         """, unsafe_allow_html=True)
         
-        # --- NUEVOS NOMBRES DE VISTAS (TABS) ---
+        # --- DEFINICIONES DE PROCESO ---
         parejas = {
             "Conexión a Stacking": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
             "Desconexión para Embarque": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
             "Conexión OnBoard": {"Fin": "CONEXIÓN ONBOARD", "Ini": "TIME_LOAD"}
         }
 
-        # --- MAPA DE NOMBRES DE ESTADO PERSONALIZADOS ---
         mapa_estados = {
             "Conexión a Stacking": "Conectado",
             "Desconexión para Embarque": "Desconectado",
@@ -354,10 +362,9 @@ if files_rep_list and files_mon_list:
 
         ahora = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
 
+        # --- CÁLCULO DE ESTADOS Y SEMÁFOROS DINÁMICOS ---
         for proceso, cols in parejas.items():
-            # Obtenemos el nombre específico de "Finalizado" para este proceso
             label_fin = mapa_estados[proceso]
-            
             df[f"Estado_{proceso}"] = "Sin Solicitud"
             df[f"Min_{proceso}"] = 0.0
             
@@ -367,7 +374,6 @@ if files_rep_list and files_mon_list:
                     (df[cols["Ini"]].notna()) & (df[cols["Fin"]].isna()),  
                     (df[cols["Ini"]].isna())                            
                 ]
-                # AQUI USAMOS EL NUEVO NOMBRE DE ESTADO (label_fin)
                 df[f"Estado_{proceso}"] = np.select(cond, [label_fin, "Pendiente", "Sin Solicitud"], default="Sin Solicitud")
                 
                 col_min = f"Min_{proceso}"
@@ -383,15 +389,18 @@ if files_rep_list and files_mon_list:
                 df[f"Ver_Tiempo_{proceso}"] = np.where(mask_fin, df[col_min].apply(formatear_duracion), "")
                 df[f"Ver_Trans_{proceso}"] = np.where(mask_pen, df[col_min], 0)
 
+            # LÓGICA DE SEMÁFORO DIFERENCIADA
             col_min_p = f"Min_{proceso}"
+            limite_verde, limite_amarillo = UMBRALES_SEMAFORO[proceso] # Obtenemos los límites específicos
+
             cond_sem = [
-                df[col_min_p] <= 15,
-                (df[col_min_p] > 15) & (df[col_min_p] <= 30),
-                df[col_min_p] > 30
+                df[col_min_p] <= limite_verde,
+                (df[col_min_p] > limite_verde) & (df[col_min_p] <= limite_amarillo),
+                df[col_min_p] > limite_amarillo
             ]
             df[f"Semaforo_{proceso}"] = np.select(cond_sem, ['Verde', 'Amarillo', 'Rojo'], default='Rojo')
 
-        # --- TABS CON NUEVOS NOMBRES ---
+        # --- TABS ---
         tab1, tab2, tab3 = st.tabs(["🔌 CONEXIÓN A STACKING", "🔋 DESCONEXIÓN EMBARQUE", "🚢 CONEXIÓN ONBOARD"])
 
         def render_tab(tab, proceso):
@@ -400,11 +409,9 @@ if files_rep_list and files_mon_list:
                 col_stat = f"Estado_{proceso}"
                 col_min = f"Min_{proceso}"
                 col_sem = f"Semaforo_{proceso}"
-                
-                # Recuperamos el nombre de estado "Finalizado" correcto
                 label_fin = mapa_estados[proceso]
-                
-                # Filtramos usando el nuevo nombre
+                lim_verde, lim_amarillo = UMBRALES_SEMAFORO[proceso] # Para pintar tabla correctamente
+
                 df_activo = df[df[col_stat].isin([label_fin, "Pendiente"])].copy()
                 
                 conteos = pd.DataFrame()
@@ -413,7 +420,6 @@ if files_rep_list and files_mon_list:
                     conteos.columns = ['Color', 'Cantidad']
 
                 if not df_activo.empty:
-                    # Lógica KPI (Conexión OnBoard es especial)
                     if proceso == "Conexión OnBoard": 
                         df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
@@ -468,7 +474,6 @@ if files_rep_list and files_mon_list:
 
                 st.divider()
 
-                # Filtro con los NUEVOS NOMBRES
                 filtro_estado = st.radio(f"f_{proceso}", ["Todos", label_fin, "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
                 if filtro_estado == "Todos": df_show = df.copy()
@@ -491,9 +496,10 @@ if files_rep_list and files_mon_list:
                     val = df.loc[row.name, col_min]
                     stt = df.loc[row.name, col_stat]
                     est = [''] * len(row)
-                    # Colorear si es Pendiente O si es el Estado Finalizado específico (label_fin)
+                    
+                    # Usamos los límites específicos de este proceso para pintar la tabla
                     if stt in [label_fin, "Pendiente"] and pd.notna(val) and val >= 0:
-                        c = "#d4edda" if val<=15 else "#fff3cd" if val<=30 else "#f8d7da"
+                        c = "#d4edda" if val <= lim_verde else "#fff3cd" if val <= lim_amarillo else "#f8d7da"
                         est[4] = f"background-color: {c}; font-weight: bold; color: #333;"
                         if stt == label_fin: est[2] = f"background-color: {c}; font-weight: bold; color: #333;"
                     return est
@@ -503,7 +509,6 @@ if files_rep_list and files_mon_list:
                 df_dsp.columns = ['Contenedor', 'Tipo', 'Tiempo', 'Estado', 'Minutos Transcurridos']
                 st.dataframe(df_dsp.style.apply(pintar, axis=1).format({"Minutos Transcurridos": "{:.1f}"}), use_container_width=True, height=400)
 
-        # LLAMADAS CON LOS NUEVOS NOMBRES DE CLAVE
         render_tab(tab1, "Conexión a Stacking")
         render_tab(tab2, "Desconexión para Embarque")
         render_tab(tab3, "Conexión OnBoard")
@@ -513,6 +518,59 @@ if files_rep_list and files_mon_list:
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         st.download_button(f"📥 Descargar Excel Completo", buffer.getvalue(), f"Reporte_{seleccion_rot}.xlsx")
+
+        # --- SECCIÓN: KPI GLOBAL ---
+        st.divider()
+        st.subheader("🏁 KPI Global de la Rotación")
+
+        total_operaciones = 0
+        total_cumplimiento = 0
+        
+        for proceso in parejas.keys():
+            label_fin = mapa_estados[proceso]
+            col_stat = f"Estado_{proceso}"
+            col_min = f"Min_{proceso}"
+            df_proc = df[df[col_stat].isin([label_fin, "Pendiente"])].copy()
+            
+            if not df_proc.empty:
+                if proceso == "Conexión OnBoard":
+                    cumple_proc = (df_proc[col_min] <= 30).sum()
+                else:
+                    cumple_proc = (
+                        ((df_proc['TIPO'] == 'CT') & (df_proc[col_min] <= 30)) | 
+                        ((df_proc['TIPO'] == 'General') & (df_proc[col_min] <= 60))
+                    ).sum()
+                
+                total_operaciones += len(df_proc)
+                total_cumplimiento += cumple_proc
+
+        pct_global = (total_cumplimiento / total_operaciones * 100) if total_operaciones > 0 else 0
+
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = pct_global,
+            number = {'suffix': "%", 'font': {'size': 40}},
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Cumplimiento Total"},
+            gauge = {
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                'bar': {'color': "black", 'thickness': 0.02},
+                'bgcolor': "white",
+                'borderwidth': 2,
+                'bordercolor': "gray",
+                'steps': [
+                    {'range': [0, 33.33], 'color': "#dc3545"},
+                    {'range': [33.33, 66.66], 'color': "#ffc107"},
+                    {'range': [66.66, 100], 'color': "#28a745"}
+                ],
+            }
+        ))
+        
+        fig_gauge.update_layout(height=350, margin=dict(t=50,b=10,l=30,r=30))
+        
+        col_g1, col_g2, col_g3 = st.columns([1, 2, 1])
+        with col_g2:
+            st.plotly_chart(fig_gauge, use_container_width=True)
 
     else:
         st.error("Error al procesar archivos. Revisa el formato del Monitor.")
