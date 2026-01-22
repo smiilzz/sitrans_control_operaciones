@@ -189,16 +189,43 @@ def cargar_excel(file, palabra_clave):
 
 def limpiar_y_unificar_columnas(df):
     """
-    Fusiona columnas duplicadas de sensores.
+    Fusiona columnas duplicadas de sensores y elimina duplicados de otras columnas
+    para evitar errores de 'DataFrame object has no attribute dtype'.
     """
+    # 1. Normalizar nombres a mayúsculas
     df.columns = df.columns.str.strip().str.upper()
+    
+    # 2. FUSIONAR SENSORES (Manejo robusto de duplicados)
     for col_base in COLS_SENSORES:
-        col_duplicada = f"{col_base}.1"
-        if col_base in df.columns and col_duplicada in df.columns:
-            df[col_base] = df[col_base].fillna(df[col_duplicada])
-            df = df.drop(columns=[col_duplicada])
-    return df
+        # CASO A: Duplicados exactos de nombre (Generados por la normalización)
+        # Si hay dos columnas que se llaman "SENSOR1_TMP", las fusionamos.
+        if list(df.columns).count(col_base) > 1:
+            # Extraemos todas las columnas con ese nombre (devuelve un DataFrame)
+            df_dups = df[col_base]
+            
+            # Combinamos los valores: llenamos los vacíos de la primera con los de la segunda, etc.
+            # bfill(axis=1) rellena horizontalmente. iloc[:, 0] toma la primera columna resultante.
+            col_fusionada = df_dups.bfill(axis=1).iloc[:, 0]
+            
+            # Eliminamos las columnas duplicadas originales del DF principal
+            # (drop borrará todas las columnas con ese nombre)
+            df = df.drop(columns=[col_base])
+            
+            # Reinsertamos la columna ya fusionada y limpia
+            df[col_base] = col_fusionada
 
+        # CASO B: Duplicados con sufijo .1 (Generados por Pandas al leer)
+        col_sufijo = f"{col_base}.1"
+        if col_base in df.columns and col_sufijo in df.columns:
+            df[col_base] = df[col_base].fillna(df[col_sufijo])
+            df = df.drop(columns=[col_sufijo])
+
+    # 3. LIMPIEZA FINAL DE DUPLICADOS (CRÍTICO)
+    # Si quedan otras columnas duplicadas (ej: dos columnas 'UNIDAD'), 
+    # conservamos solo la primera para evitar que el código explote después.
+    df = df.loc[:, ~df.columns.duplicated()]
+    
+    return df
 def procesar_batch_monitores(lista_archivos):
     """
     Procesa una LISTA de archivos monitor y los fusiona secuencialmente
