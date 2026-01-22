@@ -16,14 +16,11 @@ st.set_page_config(
 )
 
 # --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
-# Define aquí hasta qué minuto es VERDE y hasta cuál es AMARILLO.
-# Lo que supere el segundo número será ROJO.
-# Formato: [Minutos_Limite_Verde, Minutos_Limite_Amarillo]
-
+# [Minutos_Verde, Minutos_Amarillo]
 UMBRALES_SEMAFORO = {
-    "Conexión a Stacking":     [15, 30],  # Verde <= 15, Amarillo 15-30, Rojo > 30
-    "Desconexión para Embarque": [20, 45],  # Ejemplo: Un poco más holgado
-    "Conexión OnBoard":        [15, 30]   # Igual al estándar
+    "Conexión a Stacking":       [15, 30],  
+    "Desconexión para Embarque": [20, 45],  
+    "Conexión OnBoard":          [15, 30]   
 }
 
 # --- CSS VISUAL (ESTÉTICA) ---
@@ -63,26 +60,6 @@ st.markdown("""
         border: 1px solid #003366;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    .stTabs [data-baseweb="tab"] div[data-testid="stMarkdownContainer"] p {
-        font-size: 16px !important; margin: 0;
-    }
-    .kpi-card {
-        padding: 20px;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        margin-bottom: 15px;
-        height: 120px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-    .kpi-value { font-size: 36px; font-weight: 800; margin: 0; line-height: 1; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
-    .kpi-label { font-size: 13px; font-weight: 500; opacity: 0.95; margin-top: 5px; text-transform: uppercase; }
-    .bg-green { background: linear-gradient(135deg, #28a745, #218838); }
-    .bg-yellow { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333 !important; }
-    .bg-red { background: linear-gradient(135deg, #dc3545, #c82333); }
     .metric-card {
         background-color: white;
         border: 1px solid #e0e0e0;
@@ -197,23 +174,16 @@ def cargar_excel(file, palabra_clave):
         return None
     except: return None
 
-# --- FUNCIONES LÓGICA MONITOR (CORREGIDAS) ---
+# --- FUNCIONES LÓGICA MONITOR ---
 
 def limpiar_y_unificar_columnas(df):
-    """
-    1. Normaliza nombres.
-    2. ELIMINA columnas duplicadas.
-    3. Fusiona columnas de sensores duplicadas.
-    """
     df.columns = df.columns.str.strip().str.upper()
     df = df.loc[:, ~df.columns.duplicated()]
-    
     for col_base in COLS_SENSORES:
         col_sufijo = f"{col_base}.1"
         if col_base in df.columns and col_sufijo in df.columns:
             df[col_base] = df[col_base].fillna(df[col_sufijo])
             df = df.drop(columns=[col_sufijo])
-            
     return df
 
 def procesar_batch_monitores(lista_archivos):
@@ -222,12 +192,9 @@ def procesar_batch_monitores(lista_archivos):
             df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
             if 'UNIDAD' in df_maestro.columns:
                 df_maestro = df_maestro.set_index('UNIDAD')
-            else:
-                df_maestro = pd.DataFrame()
-        except:
-            df_maestro = pd.DataFrame()
-    else:
-        df_maestro = pd.DataFrame()
+            else: df_maestro = pd.DataFrame()
+        except: df_maestro = pd.DataFrame()
+    else: df_maestro = pd.DataFrame()
 
     for archivo in lista_archivos:
         try:
@@ -242,10 +209,8 @@ def procesar_batch_monitores(lista_archivos):
             df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
             df_nuevo = df_nuevo.set_index('UNIDAD')
             
-            if df_maestro.empty:
-                df_maestro = df_nuevo
-            else:
-                df_maestro = df_nuevo.combine_first(df_maestro)
+            if df_maestro.empty: df_maestro = df_nuevo
+            else: df_maestro = df_nuevo.combine_first(df_maestro)
                 
         except Exception as e:
             st.error(f"Error procesando archivo {archivo.name}: {e}")
@@ -347,7 +312,6 @@ if files_rep_list and files_mon_list:
         </div>
         """, unsafe_allow_html=True)
         
-        # --- DEFINICIONES DE PROCESO ---
         parejas = {
             "Conexión a Stacking": {"Fin": "CONEXIÓN", "Ini": "TIME_IN"},
             "Desconexión para Embarque": {"Fin": "DESCONECCIÓN", "Ini": "SOLICITUD DESCONEXIÓN"},
@@ -362,7 +326,7 @@ if files_rep_list and files_mon_list:
 
         ahora = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
 
-        # --- CÁLCULO DE ESTADOS Y SEMÁFOROS DINÁMICOS ---
+        # --- CÁLCULO DE ESTADOS ---
         for proceso, cols in parejas.items():
             label_fin = mapa_estados[proceso]
             df[f"Estado_{proceso}"] = "Sin Solicitud"
@@ -389,10 +353,8 @@ if files_rep_list and files_mon_list:
                 df[f"Ver_Tiempo_{proceso}"] = np.where(mask_fin, df[col_min].apply(formatear_duracion), "")
                 df[f"Ver_Trans_{proceso}"] = np.where(mask_pen, df[col_min], 0)
 
-            # LÓGICA DE SEMÁFORO DIFERENCIADA
             col_min_p = f"Min_{proceso}"
-            limite_verde, limite_amarillo = UMBRALES_SEMAFORO[proceso] # Obtenemos los límites específicos
-
+            limite_verde, limite_amarillo = UMBRALES_SEMAFORO[proceso]
             cond_sem = [
                 df[col_min_p] <= limite_verde,
                 (df[col_min_p] > limite_verde) & (df[col_min_p] <= limite_amarillo),
@@ -410,7 +372,7 @@ if files_rep_list and files_mon_list:
                 col_min = f"Min_{proceso}"
                 col_sem = f"Semaforo_{proceso}"
                 label_fin = mapa_estados[proceso]
-                lim_verde, lim_amarillo = UMBRALES_SEMAFORO[proceso] # Para pintar tabla correctamente
+                lim_verde, lim_amarillo = UMBRALES_SEMAFORO[proceso]
 
                 df_activo = df[df[col_stat].isin([label_fin, "Pendiente"])].copy()
                 
@@ -420,6 +382,7 @@ if files_rep_list and files_mon_list:
                     conteos.columns = ['Color', 'Cantidad']
 
                 if not df_activo.empty:
+                    # Lógica de cumplimiento (KPI)
                     if proceso == "Conexión OnBoard": 
                         df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
@@ -428,47 +391,64 @@ if files_rep_list and files_mon_list:
                             (df_activo['TIPO'] == 'General') & (df_activo[col_min] <= 60)
                         ]
                         df_activo['Cumple'] = np.select(cond_cumple, [True, True], default=False)
+                    
+                    pct = (df_activo['Cumple'].sum() / len(df_activo)) * 100
 
-                    c1, c2 = st.columns([1, 2], gap="large")
+                    # --- DISEÑO EN 3 COLUMNAS ---
+                    k1, k2, k3 = st.columns([1, 1, 1], gap="medium")
 
-                    with c1: 
-                        st.subheader("🚦 Semáforo Tiempos")
+                    with k1: 
+                        st.subheader("🚦 Distribución")
                         color_map = {'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', color_discrete_map=color_map, hole=0.6)
-                        fig.update_layout(showlegend=True, margin=dict(t=10,b=10,l=10,r=10), height=200, legend=dict(orientation="h", y=-0.1))
+                        fig.update_layout(showlegend=True, margin=dict(t=0,b=0,l=0,r=0), height=200, legend=dict(orientation="h", y=-0.1))
                         st.plotly_chart(fig, use_container_width=True)
 
-                    with c2:
-                        st.subheader("📊 Indicadores de Rendimiento")
-                        pct = (df_activo['Cumple'].sum() / len(df_activo)) * 100
-                        bg_color = "bg-green" if pct >= 95 else "bg-yellow" if pct >= 85 else "bg-red"
-                        
-                        k1, k2 = st.columns([1, 1.2])
-                        with k1:
-                            st.markdown(f"""<div class="kpi-card {bg_color}"><p class="kpi-value">{pct:.1f}%</p><p class="kpi-label">CUMPLIMIENTO KPI</p></div>""", unsafe_allow_html=True)
-                        
-                        with k2:
-                            if proceso == "Conexión OnBoard":
-                                prom_global = df_activo[col_min].mean()
-                                rojos_total = len(df_activo[~df_activo['Cumple']])
-                                if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Unidades Fuera de Plazo</div>""", unsafe_allow_html=True)
-                                else: st.markdown(f"""<div class="alert-box alert-green">✅ Operación OnBoard al día</div>""", unsafe_allow_html=True)
-                                st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Tiempo</div></div>""", unsafe_allow_html=True)
-                            else:
-                                rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
-                                rojos_normal = len(df_activo[(df_activo['TIPO']=='General') & (~df_activo['Cumple'])])
-                                prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
-                                prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
+                    with k2:
+                        # --- NUEVO: RELOJ SEMÁFORO KPI ESPECÍFICO ---
+                        st.subheader("⏰ Cumplimiento KPI")
+                        fig_gauge = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = pct,
+                            number = {'suffix': "%", 'font': {'size': 30}},
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            gauge = {
+                                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                                'bar': {'color': "black", 'thickness': 0.03},
+                                'bgcolor': "white",
+                                'borderwidth': 2,
+                                'bordercolor': "gray",
+                                'steps': [
+                                    {'range': [0, 33.33], 'color': "#dc3545"},
+                                    {'range': [33.33, 66.66], 'color': "#ffc107"},
+                                    {'range': [66.66, 100], 'color': "#28a745"}
+                                ],
+                            }
+                        ))
+                        fig_gauge.update_layout(height=220, margin=dict(t=30,b=10,l=20,r=20))
+                        st.plotly_chart(fig_gauge, use_container_width=True)
 
-                                if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera de Plazo</div>""", unsafe_allow_html=True)
-                                else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
-                                if rojos_normal > 0: st.markdown(f"""<div class="alert-box alert-red">⚠️ {rojos_normal} Normales Fuera de Plazo</div>""", unsafe_allow_html=True)
-                                else: st.markdown(f"""<div class="alert-box alert-green">✅ Normales al día</div>""", unsafe_allow_html=True)
-                                
-                                p1, p2 = st.columns(2)
-                                with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} min</div><div class="metric-lbl">Promedio Normales</div></div>""", unsafe_allow_html=True)
-                                with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} min</div><div class="metric-lbl">Promedio CT</div></div>""", unsafe_allow_html=True)
+                    with k3:
+                        st.subheader("📊 Métricas")
+                        if proceso == "Conexión OnBoard":
+                            prom_global = df_activo[col_min].mean()
+                            rojos_total = len(df_activo[~df_activo['Cumple']])
+                            if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Fuera de Plazo</div>""", unsafe_allow_html=True)
+                            else: st.markdown(f"""<div class="alert-box alert-green">✅ Todo al día</div>""", unsafe_allow_html=True)
+                            st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Total</div></div>""", unsafe_allow_html=True)
+                        else:
+                            rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
+                            prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
+                            prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
+
+                            if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera Plazo</div>""", unsafe_allow_html=True)
+                            else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
+                            
+                            p1, p2 = st.columns(2)
+                            with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} m</div><div class="metric-lbl">Prom. Gen</div></div>""", unsafe_allow_html=True)
+                            with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} m</div><div class="metric-lbl">Prom. CT</div></div>""", unsafe_allow_html=True)
+
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
 
@@ -496,8 +476,6 @@ if files_rep_list and files_mon_list:
                     val = df.loc[row.name, col_min]
                     stt = df.loc[row.name, col_stat]
                     est = [''] * len(row)
-                    
-                    # Usamos los límites específicos de este proceso para pintar la tabla
                     if stt in [label_fin, "Pendiente"] and pd.notna(val) and val >= 0:
                         c = "#d4edda" if val <= lim_verde else "#fff3cd" if val <= lim_amarillo else "#f8d7da"
                         est[4] = f"background-color: {c}; font-weight: bold; color: #333;"
@@ -518,59 +496,6 @@ if files_rep_list and files_mon_list:
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
         st.download_button(f"📥 Descargar Excel Completo", buffer.getvalue(), f"Reporte_{seleccion_rot}.xlsx")
-
-        # --- SECCIÓN: KPI GLOBAL ---
-        st.divider()
-        st.subheader("🏁 KPI Global de la Rotación")
-
-        total_operaciones = 0
-        total_cumplimiento = 0
-        
-        for proceso in parejas.keys():
-            label_fin = mapa_estados[proceso]
-            col_stat = f"Estado_{proceso}"
-            col_min = f"Min_{proceso}"
-            df_proc = df[df[col_stat].isin([label_fin, "Pendiente"])].copy()
-            
-            if not df_proc.empty:
-                if proceso == "Conexión OnBoard":
-                    cumple_proc = (df_proc[col_min] <= 30).sum()
-                else:
-                    cumple_proc = (
-                        ((df_proc['TIPO'] == 'CT') & (df_proc[col_min] <= 30)) | 
-                        ((df_proc['TIPO'] == 'General') & (df_proc[col_min] <= 60))
-                    ).sum()
-                
-                total_operaciones += len(df_proc)
-                total_cumplimiento += cumple_proc
-
-        pct_global = (total_cumplimiento / total_operaciones * 100) if total_operaciones > 0 else 0
-
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = pct_global,
-            number = {'suffix': "%", 'font': {'size': 40}},
-            domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "Cumplimiento Total"},
-            gauge = {
-                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                'bar': {'color': "black", 'thickness': 0.02},
-                'bgcolor': "white",
-                'borderwidth': 2,
-                'bordercolor': "gray",
-                'steps': [
-                    {'range': [0, 33.33], 'color': "#dc3545"},
-                    {'range': [33.33, 66.66], 'color': "#ffc107"},
-                    {'range': [66.66, 100], 'color': "#28a745"}
-                ],
-            }
-        ))
-        
-        fig_gauge.update_layout(height=350, margin=dict(t=50,b=10,l=30,r=30))
-        
-        col_g1, col_g2, col_g3 = st.columns([1, 2, 1])
-        with col_g2:
-            st.plotly_chart(fig_gauge, use_container_width=True)
 
     else:
         st.error("Error al procesar archivos. Revisa el formato del Monitor.")
