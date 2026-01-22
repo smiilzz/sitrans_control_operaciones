@@ -16,9 +16,10 @@ st.set_page_config(
 )
 
 # --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
+# AHORA TODOS SON IGUALES: [Minutos_Verde, Minutos_Amarillo]
 UMBRALES_SEMAFORO = {
     "Conexión a Stacking":       [15, 30],  
-    "Desconexión para Embarque": [20, 45],  
+    "Desconexión para Embarque": [15, 30], # Corregido para igualar a los demás
     "Conexión OnBoard":          [15, 30]   
 }
 
@@ -94,10 +95,9 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
     
-    /* Ajuste visual para el filtro de radio buttons */
     div[role="radiogroup"] {
         background-color: white;
-        padding: 4px; /* Un poco más compacto */
+        padding: 4px; 
         border-radius: 12px;
         border: 1px solid #e0e0e0;
         display: flex;
@@ -383,31 +383,26 @@ if files_rep_list and files_mon_list:
                 
                 conteos = pd.DataFrame()
                 if not df_activo.empty:
-                    # --- PREPARACIÓN DE DATOS PARA LA LEYENDA PERSONALIZADA ---
+                    # --- CONFIGURACIÓN DE LEYENDA ORDENADA ---
                     conteos = df_activo[col_sem].value_counts().reset_index()
                     conteos.columns = ['Color', 'Cantidad']
                     
-                    # Crear etiquetas dinámicas basadas en los límites del proceso actual
                     label_verde = f"Verde: ≤{lim_verde}m"
-                    label_amarillo = f"Amarillo: >{lim_verde}-{lim_amarillo}m"
+                    label_amarillo = f"Amarillo: {lim_verde}-{lim_amarillo}m"
                     label_rojo = f"Rojo: >{lim_amarillo}m"
 
-                    # Mapa de sustitución
                     legend_map = {
                         'Verde': label_verde,
                         'Amarillo': label_amarillo,
                         'Rojo': label_rojo
                     }
-                    # Aplicar el mapa a la columna 'Color'
                     conteos['Color'] = conteos['Color'].map(legend_map)
                     
-                    # Definir el orden deseado y convertir a categoría ordenada
-                    # Esto fuerza a Plotly a respetar el orden en la leyenda
-                    desired_order = [label_verde, label_amarillo, label_rojo]
-                    conteos['Color'] = pd.Categorical(conteos['Color'], categories=desired_order, ordered=True)
+                    # Forzar orden de categorías para que la leyenda siempre sea V-A-R
+                    orden_fijo = [label_verde, label_amarillo, label_rojo]
+                    conteos['Color'] = pd.Categorical(conteos['Color'], categories=orden_fijo, ordered=True)
                     conteos = conteos.sort_values('Color')
 
-                    # Nuevo mapa de colores usando las nuevas etiquetas como claves
                     new_color_map = {
                         label_verde: '#2ecc71',
                         label_amarillo: '#ffc107',
@@ -415,7 +410,6 @@ if files_rep_list and files_mon_list:
                     }
 
                 if not df_activo.empty:
-                    # Lógica de cumplimiento (KPI)
                     if proceso == "Conexión OnBoard": 
                         df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
@@ -431,10 +425,9 @@ if files_rep_list and files_mon_list:
 
                     with k1: 
                         st.subheader("🚦 Distribución Contenedores")
-                        # Usamos el nuevo mapa de colores y los datos con etiquetas personalizadas
+                        # Gráfico con leyenda ordenada
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', color_discrete_map=new_color_map, hole=0.6)
-                        # Ajustamos altura y márgenes para igualar al reloj
                         fig.update_layout(showlegend=True, margin=dict(t=20,b=20,l=20,r=20), height=230, legend=dict(orientation="h", y=-0.2))
                         st.plotly_chart(fig, use_container_width=True, key=f"pie_{proceso}")
 
@@ -469,7 +462,6 @@ if files_rep_list and files_mon_list:
                                 }
                             }
                         ))
-                        # Altura igualada a 230
                         fig_gauge.update_layout(height=230, margin=dict(t=20, b=20, l=45, r=45))
                         st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{proceso}")
 
@@ -498,7 +490,6 @@ if files_rep_list and files_mon_list:
 
                 st.divider()
 
-                # --- FILTROS Y MÉTRICAS ALINEADOS ---
                 c_filt, c_tot, c_norm, c_ct = st.columns([2, 1, 1, 1], gap="small")
                 
                 with c_filt:
