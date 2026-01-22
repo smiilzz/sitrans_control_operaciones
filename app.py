@@ -383,10 +383,39 @@ if files_rep_list and files_mon_list:
                 
                 conteos = pd.DataFrame()
                 if not df_activo.empty:
+                    # --- PREPARACIÓN DE DATOS PARA LA LEYENDA PERSONALIZADA ---
                     conteos = df_activo[col_sem].value_counts().reset_index()
                     conteos.columns = ['Color', 'Cantidad']
+                    
+                    # Crear etiquetas dinámicas basadas en los límites del proceso actual
+                    label_verde = f"Verde: ≤{lim_verde}m"
+                    label_amarillo = f"Amarillo: >{lim_verde}-{lim_amarillo}m"
+                    label_rojo = f"Rojo: >{lim_amarillo}m"
+
+                    # Mapa de sustitución
+                    legend_map = {
+                        'Verde': label_verde,
+                        'Amarillo': label_amarillo,
+                        'Rojo': label_rojo
+                    }
+                    # Aplicar el mapa a la columna 'Color'
+                    conteos['Color'] = conteos['Color'].map(legend_map)
+                    
+                    # Definir el orden deseado y convertir a categoría ordenada
+                    # Esto fuerza a Plotly a respetar el orden en la leyenda
+                    desired_order = [label_verde, label_amarillo, label_rojo]
+                    conteos['Color'] = pd.Categorical(conteos['Color'], categories=desired_order, ordered=True)
+                    conteos = conteos.sort_values('Color')
+
+                    # Nuevo mapa de colores usando las nuevas etiquetas como claves
+                    new_color_map = {
+                        label_verde: '#2ecc71',
+                        label_amarillo: '#ffc107',
+                        label_rojo: '#dc3545'
+                    }
 
                 if not df_activo.empty:
+                    # Lógica de cumplimiento (KPI)
                     if proceso == "Conexión OnBoard": 
                         df_activo['Cumple'] = df_activo[col_min] <= 30
                     else:
@@ -401,15 +430,16 @@ if files_rep_list and files_mon_list:
                     k1, k2, k3 = st.columns([1, 1, 1], gap="medium")
 
                     with k1: 
-                        st.subheader("🚦 Distribución")
-                        color_map = {'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}
+                        st.subheader("🚦 Distribución Contenedores")
+                        # Usamos el nuevo mapa de colores y los datos con etiquetas personalizadas
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
-                                     color='Color', color_discrete_map=color_map, hole=0.6)
-                        fig.update_layout(showlegend=True, margin=dict(t=0,b=0,l=0,r=0), height=200, legend=dict(orientation="h", y=-0.1))
+                                     color='Color', color_discrete_map=new_color_map, hole=0.6)
+                        # Ajustamos altura y márgenes para igualar al reloj
+                        fig.update_layout(showlegend=True, margin=dict(t=20,b=20,l=20,r=20), height=230, legend=dict(orientation="h", y=-0.2))
                         st.plotly_chart(fig, use_container_width=True, key=f"pie_{proceso}")
 
                     with k2:
-                        st.subheader("⏰ Cumplimiento KPI")
+                        st.subheader("🕜 Cumplimiento KPI")
                         color_texto = "#28a745" if pct >= 66.6 else "#ffc107" if pct >= 33.3 else "#dc3545"
                         
                         fig_gauge = go.Figure(go.Indicator(
@@ -439,6 +469,7 @@ if files_rep_list and files_mon_list:
                                 }
                             }
                         ))
+                        # Altura igualada a 230
                         fig_gauge.update_layout(height=230, margin=dict(t=20, b=20, l=45, r=45))
                         st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{proceso}")
 
@@ -467,31 +498,26 @@ if files_rep_list and files_mon_list:
 
                 st.divider()
 
-                # --- FILTROS Y MÉTRICAS ALINEADOS (NUEVA SECCIÓN) ---
-                # Definimos columnas: Columna Grande (Filtro) | Col Pequeña (Total) | Col Pequeña (Norm) | Col Pequeña (CT)
+                # --- FILTROS Y MÉTRICAS ALINEADOS ---
                 c_filt, c_tot, c_norm, c_ct = st.columns([2, 1, 1, 1], gap="small")
                 
                 with c_filt:
                     filtro_estado = st.radio(f"f_{proceso}", ["Todos", label_fin, "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
-                # Calcular datos filtrados antes de mostrar métricas
                 if filtro_estado == "Todos": df_show = df.copy()
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
                 
-                # --- BUSCADOR EN FILA SIGUIENTE ---
-                # Aplicamos el filtro de búsqueda a df_show para que las métricas reflejen TODO (Estado + Búsqueda)
                 busqueda = st.text_input(f"🔍 Buscar Contenedor:", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}", label_visibility="collapsed")
                 
                 if busqueda:
                     termino = busqueda.strip()
                     df_show = df_show[df_show['CONTENEDOR'].astype(str).str.contains(termino, case=False, na=False)]
 
-                # --- RENDERIZAR MÉTRICAS A LA DERECHA DEL FILTRO ---
                 c_tot.metric("Total Contenedores", len(df_show))
                 c_norm.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
                 c_ct.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
                 
-                st.write("") # Espacio pequeño
+                st.write("")
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
