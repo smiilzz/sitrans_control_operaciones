@@ -94,26 +94,27 @@ st.markdown("""
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
     
+    /* Ajuste visual para el filtro de radio buttons */
     div[role="radiogroup"] {
         background-color: white;
-        padding: 8px;
+        padding: 4px; /* Un poco más compacto */
         border-radius: 12px;
         border: 1px solid #e0e0e0;
         display: flex;
         justify-content: space-between;
         width: 100%;
-        margin-bottom: 15px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
     div[role="radiogroup"] label {
         flex-grow: 1;
         text-align: center;
-        margin: 0 4px;
+        margin: 0 2px;
         border-radius: 8px;
-        padding: 8px 10px;
+        padding: 6px 8px;
         font-weight: 500;
         border: 1px solid transparent;
         transition: all 0.2s;
+        font-size: 14px;
     }
     div[role="radiogroup"] label:hover {
         background-color: #f8f9fa;
@@ -400,16 +401,15 @@ if files_rep_list and files_mon_list:
                     k1, k2, k3 = st.columns([1, 1, 1], gap="medium")
 
                     with k1: 
-                        st.subheader("🚦 Distribución Contenedores")
+                        st.subheader("🚦 Distribución")
                         color_map = {'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', color_discrete_map=color_map, hole=0.6)
                         fig.update_layout(showlegend=True, margin=dict(t=0,b=0,l=0,r=0), height=200, legend=dict(orientation="h", y=-0.1))
-                        # AQUÍ LA CORRECCIÓN: Agregar clave única al gráfico
                         st.plotly_chart(fig, use_container_width=True, key=f"pie_{proceso}")
 
                     with k2:
-                        st.subheader("🕜 Cumplimiento KPI")
+                        st.subheader("⏰ Cumplimiento KPI")
                         color_texto = "#28a745" if pct >= 66.6 else "#ffc107" if pct >= 33.3 else "#dc3545"
                         
                         fig_gauge = go.Figure(go.Indicator(
@@ -440,7 +440,6 @@ if files_rep_list and files_mon_list:
                             }
                         ))
                         fig_gauge.update_layout(height=230, margin=dict(t=20, b=20, l=45, r=45))
-                        # AQUÍ LA CORRECCIÓN: Agregar clave única al gráfico
                         st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{proceso}")
 
                     with k3:
@@ -468,23 +467,31 @@ if files_rep_list and files_mon_list:
 
                 st.divider()
 
-                filtro_estado = st.radio(f"f_{proceso}", ["Todos", label_fin, "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
+                # --- FILTROS Y MÉTRICAS ALINEADOS (NUEVA SECCIÓN) ---
+                # Definimos columnas: Columna Grande (Filtro) | Col Pequeña (Total) | Col Pequeña (Norm) | Col Pequeña (CT)
+                c_filt, c_tot, c_norm, c_ct = st.columns([2, 1, 1, 1], gap="small")
                 
+                with c_filt:
+                    filtro_estado = st.radio(f"f_{proceso}", ["Todos", label_fin, "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
+                
+                # Calcular datos filtrados antes de mostrar métricas
                 if filtro_estado == "Todos": df_show = df.copy()
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
-
-                c_search, _ = st.columns([1, 2])
-                with c_search:
-                    busqueda = st.text_input(f"🔍 Buscar Contenedor (Enter):", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}")
+                
+                # --- BUSCADOR EN FILA SIGUIENTE ---
+                # Aplicamos el filtro de búsqueda a df_show para que las métricas reflejen TODO (Estado + Búsqueda)
+                busqueda = st.text_input(f"🔍 Buscar Contenedor:", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}", label_visibility="collapsed")
                 
                 if busqueda:
                     termino = busqueda.strip()
                     df_show = df_show[df_show['CONTENEDOR'].astype(str).str.contains(termino, case=False, na=False)]
 
-                kd1, kd2, kd3 = st.columns(3)
-                kd1.metric("📦 Total en Tabla", len(df_show))
-                kd2.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
-                kd3.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
+                # --- RENDERIZAR MÉTRICAS A LA DERECHA DEL FILTRO ---
+                c_tot.metric("Total Contenedores", len(df_show))
+                c_norm.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
+                c_ct.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
+                
+                st.write("") # Espacio pequeño
 
                 def pintar(row):
                     val = df.loc[row.name, col_min]
