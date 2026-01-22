@@ -4,6 +4,7 @@ import io
 import re
 import numpy as np
 import plotly.express as px
+import os  # Nuevo import necesario para la persistencia del maestro
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
@@ -143,6 +144,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- CONFIGURACIÓN LÓGICA MONITOR ---
+ARCHIVO_MAESTRO = "monitor_maestro_acumulado.xlsx"
+COLS_SENSORES = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
+
 # --- FUNCIONES SOPORTE ---
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
@@ -177,6 +182,7 @@ def extraer_metadatos(file):
 
 @st.cache_data(show_spinner=False)
 def cargar_excel(file, palabra_clave):
+    # Esta función se mantiene para leer los REPORTES (que tienen formato variable)
     try:
         df_temp = pd.read_excel(file, header=None)
         for i, row in df_temp.iterrows():
@@ -195,8 +201,85 @@ def cargar_excel(file, palabra_clave):
         return None
     except: return None
 
+# --- NUEVAS FUNCIONES PARA LÓGICA INTELIGENTE DE MONITOR ---
+
+def limpiar_y_unificar_columnas(df):
+    """
+    Fusiona columnas duplicadas (ej: SENSOR1_TMP y SENSOR1_TMP.1) 
+    para asegurar que capturamos el dato donde sea que venga.
+    """
+    df.columns = df.columns.str.strip().str.upper()
+    
+    for col_base in COLS_SENSORES:
+        col_duplicada = f"{col_base}.1"
+        if col_base in df.columns and col_duplicada in df.columns:
+            # Rellenar la base con la duplicada si la base está vacía
+            df[col_base] = df[col_base].fillna(df[col_duplicada])
+            df = df.drop(columns=[col_duplicada])
+    return df
+
+def procesar_monitor_inteligente(archivo_upload):
+    """
+    Lee el Monitor desde la Fila 4, gestiona duplicados y fusiona
+    con el histórico acumulado para recordar si era CT.
+    """
+    # 1. Leer el archivo NUEVO (Asumiendo encabezados en fila 4 -> header=3)
+    try:
+        df_nuevo = pd.read_excel(archivo_upload, header=3)
+    except Exception as e:
+        st.error(f"Error leyendo el archivo Monitor: {e}")
+        return None
+
+    # 2. Limpieza de duplicados
+    df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
+    
+    # Preparar índice (UNIDAD es la clave)
+    if 'UNIDAD' not in df_nuevo.columns:
+        st.error("El archivo Monitor no tiene columna 'UNIDAD' en la fila 4.")
+        return None
+        
+    df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
+    df_nuevo = df_nuevo.set_index('UNIDAD')
+
+    # 3. Fusionar con Maestro (Histórico)
+    if os.path.exists(ARCHIVO_MAESTRO):
+        try:
+            df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
+            if 'UNIDAD' in df_maestro.columns:
+                df_maestro = df_maestro.set_index('UNIDAD')
+                # Prioriza df_nuevo. Si es NaN en nuevo, usa maestro.
+                df_final = df_nuevo.combine_first(df_maestro)
+            else:
+                df_final = df_nuevo
+        except:
+            df_final = df_nuevo
+    else:
+        df_final = df_nuevo
+
+    # 4. Determinar si es CT o NORMAL (Usando datos combinados)
+    def es_reefer_ct(row):
+        es_ct = False
+        for col in COLS_SENSORES:
+            # Verifica si hay dato válido (no nulo y no vacío)
+            if col in row and pd.notna(row[col]) and str(row[col]).strip() != "":
+                es_ct = True
+                break
+        return "CT" if es_ct else "General" # Usamos 'General' para mantener compatibilidad con tu código
+
+    df_final['TIPO_CONTENEDOR'] = df_final.apply(es_reefer_ct, axis=1)
+
+    # 5. Guardar el nuevo maestro actualizado
+    try:
+        df_guardar = df_final.reset_index()
+        df_guardar.to_excel(ARCHIVO_MAESTRO, index=False)
+    except Exception as e:
+        st.warning(f"No se pudo guardar el histórico localmente: {e}")
+    
+    return df_guardar # Retorna DF con UNIDAD como columna normal
+
 @st.cache_data(show_spinner="Procesando datos...")
 def procesar_datos_completos(files_rep_list, file_mon):
+    # 1. PROCESAR REPORTES (Lógica original)
     lista_dfs = []
     for archivo_rep in files_rep_list:
         meta = extraer_metadatos(archivo_rep)
@@ -212,14 +295,23 @@ def procesar_datos_completos(files_rep_list, file_mon):
             
     if not lista_dfs: return None
     df_rep = pd.concat(lista_dfs, ignore_index=True)
-    df_mon_data = cargar_excel(file_mon, "UNIDAD")
+    
+    # 2. PROCESAR MONITOR (Lógica NUEVA e Inteligente)
+    # Ya no usamos cargar_excel simple, usamos la función robusta
+    df_mon_data = procesar_monitor_inteligente(file_mon)
+    
     if df_mon_data is None: return None
+    
+    # 3. MERGE DE DATOS
+    # df_mon_data ya trae la columna 'UNIDAD' y 'TIPO_CONTENEDOR' calculada con histórico
     df_master = pd.merge(df_rep, df_mon_data, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
     
-    cols_ct = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
-    presentes = [c for c in df_master.columns if c in cols_ct]
-    if presentes: df_master['TIPO'] = df_master[presentes].notna().any(axis=1).apply(lambda x: 'CT' if x else 'General')
-    else: df_master['TIPO'] = 'General'
+    # 4. ASIGNAR TIPO (CT/GENERAL)
+    # Si cruzó con el monitor, usamos su clasificación. Si no, General.
+    if 'TIPO_CONTENEDOR' in df_master.columns:
+        df_master['TIPO'] = df_master['TIPO_CONTENEDOR'].fillna('General')
+    else:
+        df_master['TIPO'] = 'General'
         
     cols_fecha_posibles = ["TIME_IN", "CONEXIÓN", "SOLICITUD DESCONEXIÓN", "DESCONECCIÓN", "TIME_LOAD", "CONEXIÓN ONBOARD"]
     for col in cols_fecha_posibles:
@@ -231,13 +323,26 @@ def procesar_datos_completos(files_rep_list, file_mon):
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
-        st.image("Logo.png", use_container_width=True)
+        try:
+            st.image("Logo.png", use_container_width=True)
+        except:
+            st.title("SITRANS")
         
     st.header("Carga de Datos")
     files_rep_list = st.file_uploader("📂 1_Reportes", type=["xls", "xlsx"], accept_multiple_files=True)
     file_mon = st.file_uploader("📂 2_Monitor", type=["xlsx"])
+    
+    if st.button("Borrar Historial Monitor"):
+        if os.path.exists(ARCHIVO_MAESTRO):
+            os.remove(ARCHIVO_MAESTRO)
+            st.success("Historial borrado.")
+        else:
+            st.info("No hay historial.")
 
 if files_rep_list and file_mon:
+    # Reiniciar puntero del archivo monitor por si acaso
+    file_mon.seek(0)
+    
     df_master = procesar_datos_completos(files_rep_list, file_mon)
 
     if df_master is not None:
@@ -277,7 +382,7 @@ if files_rep_list and file_mon:
                 cond = [
                     (df[cols["Ini"]].notna()) & (df[cols["Fin"]].notna()), 
                     (df[cols["Ini"]].notna()) & (df[cols["Fin"]].isna()),  
-                    (df[cols["Ini"]].isna())                           
+                    (df[cols["Ini"]].isna())                            
                 ]
                 df[f"Estado_{proceso}"] = np.select(cond, ["Finalizado", "Pendiente", "Sin Solicitud"], default="Sin Solicitud")
                 
@@ -334,12 +439,14 @@ if files_rep_list and file_mon:
 
                     with c1: 
                         st.subheader("🚦 Semáforo Tiempos")
+                        # Colores personalizados
+                        color_map = {'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}
+                        
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', 
-                                     color_discrete_map={'Verde':'#2ecc71', 'Amarillo':'#ffc107', 'Rojo':'#dc3545'}, 
+                                     color_discrete_map=color_map, 
                                      hole=0.6)
                         fig.update_layout(showlegend=True, margin=dict(t=10,b=10,l=10,r=10), height=200, legend=dict(orientation="h", y=-0.1))
-                        # SIN INTERACTIVIDAD COMPLEJA
                         st.plotly_chart(fig, use_container_width=True)
 
                     with c2:
@@ -426,6 +533,6 @@ if files_rep_list and file_mon:
         st.download_button(f"📥 Descargar Excel Completo", buffer.getvalue(), f"Reporte_{seleccion_rot}.xlsx")
 
     else:
-        st.error("Error al procesar archivos.")
+        st.error("Error al procesar archivos. Revisa el formato del Monitor.")
 else:
-    st.info("Sube los reportes.")
+    st.info("Sube los reportes y el archivo Monitor para comenzar.")
