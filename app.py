@@ -297,23 +297,36 @@ if files_rep_list and files_mon_list:
     df_master = procesar_datos_completos(files_rep_list, files_mon_list)
 
     if df_master is not None:
-        c_head_izq, c_head_der = st.columns([3, 1])
-        opciones_rot = df_master['ROTACION_DETECTADA'].unique()
-        with c_head_der:
-            seleccion_rot = st.selectbox("⚓ Rotación:", opciones_rot)
+        # --- NUEVO: CREAR ETIQUETA COMBINADA (ROTACIÓN - NAVE) ---
+        # Creamos una columna temporal para el selector
+        df_master['ROTACION_LABEL'] = df_master['ROTACION_DETECTADA'].astype(str) + " - " + df_master['NAVE_DETECTADA'].astype(str)
 
-        df = df_master[df_master['ROTACION_DETECTADA'] == seleccion_rot].copy()
+        c_head_izq, c_head_der = st.columns([3, 1])
+        
+        # Obtenemos las opciones únicas de la etiqueta combinada
+        opciones_rot = df_master['ROTACION_LABEL'].unique()
+        
+        with c_head_der:
+            seleccion_label = st.selectbox("⚓ Rotación:", opciones_rot)
+
+        # Filtramos el DataFrame usando la etiqueta combinada seleccionada
+        df = df_master[df_master['ROTACION_LABEL'] == seleccion_label].copy()
+        
+        # Obtenemos los valores limpios para mostrarlos en el Header Box
         nave = df['NAVE_DETECTADA'].iloc[0] if not df.empty else "---"
+        rotacion_real = df['ROTACION_DETECTADA'].iloc[0] if not df.empty else "---"
         fecha = df['FECHA_CONSULTA'].iloc[0] if not df.empty else "---"
 
         with c_head_izq:
             st.title("🚢 Control de Operaciones Sitrans")
             
+        # Usamos 'rotacion_real' para que en el recuadro azul solo salga el número (ej: 26-0020)
+        # Si prefieres que salga todo junto en el recuadro, cambia 'rotacion_real' por 'seleccion_label'
         st.markdown(f"""
         <div class="header-data-box">
             <div class="header-item"><div class="header-label">Nave</div><div class="header-value">{nave}</div></div>
             <div class="header-item"><div class="header-label">Fecha Consulta</div><div class="header-value">{fecha}</div></div>
-            <div class="header-item"><div class="header-label">Rotación</div><div class="header-value">{seleccion_rot}</div></div>
+            <div class="header-item"><div class="header-label">Rotación</div><div class="header-value">{rotacion_real}</div></div>
         </div>
         """, unsafe_allow_html=True)
         
