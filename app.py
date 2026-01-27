@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
+import io
+import re
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-import re
-from pathlib import Path # <--- Esta es la clave para que funcionen las tildes
+import glob
+import time
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
@@ -15,35 +17,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ==========================================
-# 🔧 RUTA BASE (ONEDRIVE)
-# ==========================================
-# Usamos Path() para que Python entienda las tildes y espacios
-BASE_PATH = Path(r"C:\Users\reefertpsv\OneDrive - Universidad Técnica Federico Santa María\Control Operaciones")
+# ==============================================================================
+# 🔧 AUTO-DETECCIÓN DE RUTA (SOLUCIÓN DEFINITIVA)
+# ==============================================================================
+# En lugar de escribir la ruta, le decimos a Python: 
+# "Usa la carpeta donde está guardado este archivo app.py"
+try:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+except:
+    BASE_DIR = os.getcwd() # Fallback por si corre en un entorno raro
 
-# Rutas derivadas usando la lógica moderna de Path
-DIR_REPORTES = BASE_PATH / "1_Reporte"
-DIR_MONITOR = BASE_PATH / "2_Monitor"
-ARCHIVO_MAESTRO = BASE_PATH / "monitor_maestro_acumulado.xlsx"
+# Rutas derivadas (Busca las carpetas al lado del script)
+DIR_REPORTES = os.path.join(BASE_DIR, "1_Reporte")
+DIR_MONITOR = os.path.join(BASE_DIR, "2_Monitor")
+ARCHIVO_MAESTRO = os.path.join(BASE_DIR, "monitor_maestro_acumulado.xlsx")
 
 # --- FUNCIONES SOPORTE ---
 COLS_SENSORES = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
 
-def get_files_robusto(folder_path):
-    """Busca archivos ignorando mayúsculas y extensiones confusas"""
-    if not folder_path.exists():
-        return []
-    
-    archivos_encontrados = []
-    # Iterar sobre TODO lo que hay en la carpeta
-    for fichero in folder_path.iterdir():
-        if fichero.is_file():
-            # Verificar si parece un Excel (ignorando mayúsculas)
-            if fichero.suffix.lower() in ['.xls', '.xlsx', '.xlsm']:
-                # Ignorar archivos temporales de Excel (~$...)
-                if not fichero.name.startswith("~$"):
-                    archivos_encontrados.append(fichero)
-    return archivos_encontrados
+def get_files_from_folder(folder):
+    """Busca archivos ignorando mayúsculas y extensiones"""
+    files = []
+    if os.path.exists(folder):
+        # Busca todo lo que termine en xls o xlsx
+        tipos = ["*.xls", "*.xlsx", "*.XLS", "*.XLSX"]
+        for tipo in tipos:
+            files.extend(glob.glob(os.path.join(folder, tipo)))
+    return list(set(files))
 
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
@@ -56,7 +56,6 @@ def formatear_duracion(minutos):
 def extraer_metadatos(file_path):
     metadatos = {"Nave": "---", "Rotación": "Indefinida", "Fecha": "---"}
     try:
-        # Pandas lee el objeto Path directamente
         df_head = pd.read_excel(file_path, header=None, nrows=20)
         texto = " ".join(df_head.astype(str).stack().tolist()).upper()
         match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto)
@@ -80,11 +79,15 @@ def extraer_metadatos(file_path):
 @st.cache_data(show_spinner=False)
 def cargar_excel(file_path, palabra_clave):
     try:
+        # Intenta leer directo
         df_temp = pd.read_excel(file_path, header=None)
+        
+        # Busca la palabra clave
         for i, row in df_temp.iterrows():
             vals = [str(v).strip().upper() for v in row]
             if palabra_clave in vals:
                 df = pd.read_excel(file_path, header=i)
+                # Limpiar columnas duplicadas (.1, .2)
                 cols = pd.Series(df.columns)
                 for c_idx, col in enumerate(df.columns):
                     col_str = str(col).strip().upper()
@@ -107,9 +110,8 @@ def limpiar_y_unificar_columnas(df):
             df = df.drop(columns=[col_sufijo])
     return df
 
-def procesar_batch_monitores(lista_archivos):
-    # Cargar maestro si existe
-    if ARCHIVO_MAESTRO.exists():
+def procesar_batch_monitores(lista_rutas_archivos):
+    if os.path.exists(ARCHIVO_MAESTRO):
         try:
             df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
             if 'UNIDAD' in df_maestro.columns:
@@ -118,16 +120,19 @@ def procesar_batch_monitores(lista_archivos):
         except: df_maestro = pd.DataFrame()
     else: df_maestro = pd.DataFrame()
 
-    for ruta_archivo in lista_archivos:
+    for ruta_archivo in lista_rutas_archivos:
         try:
             df_nuevo = pd.read_excel(ruta_archivo, header=3)
             df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
+            
             if 'UNIDAD' not in df_nuevo.columns: continue
+
             df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
             df_nuevo = df_nuevo.set_index('UNIDAD')
             
             if df_maestro.empty: df_maestro = df_nuevo
             else: df_maestro = df_nuevo.combine_first(df_maestro)
+                
         except: pass
 
     if df_maestro.empty: return None
@@ -149,9 +154,9 @@ def procesar_batch_monitores(lista_archivos):
     except: return df_maestro.reset_index()
 
 @st.cache_data(show_spinner="Procesando datos...")
-def procesar_datos_completos(files_rep, files_mon):
+def procesar_datos_completos(files_rep_list, files_mon_list):
     lista_dfs = []
-    for archivo_rep in files_rep:
+    for archivo_rep in files_rep_list:
         meta = extraer_metadatos(archivo_rep)
         df_ind = cargar_excel(archivo_rep, "CONTENEDOR")
         if df_ind is not None:
@@ -166,10 +171,11 @@ def procesar_datos_completos(files_rep, files_mon):
     if not lista_dfs: return None
     df_rep = pd.concat(lista_dfs, ignore_index=True)
     
-    df_mon_data = procesar_batch_monitores(files_mon)
+    df_mon_data = procesar_batch_monitores(files_mon_list)
     if df_mon_data is None: 
-        st.warning("⚠️ No se pudieron procesar los datos de monitores.")
-        return None
+        # Si no hay monitores, usamos solo reportes (evita error crítico)
+        st.toast("⚠️ No hay datos de monitores, mostrando solo reportes.")
+        return df_rep
     
     df_master = pd.merge(df_rep, df_mon_data, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
     
@@ -184,94 +190,44 @@ def procesar_datos_completos(files_rep, files_mon):
             df_master[col] = pd.to_datetime(df_master[col], dayfirst=True, errors='coerce')
     return df_master
 
-# --- OBTENCIÓN AUTOMÁTICA DE ARCHIVOS (USANDO PATHLIB) ---
-files_rep_list = get_files_robusto(DIR_REPORTES)
-files_mon_list = get_files_robusto(DIR_MONITOR)
+# --- OBTENCIÓN AUTOMÁTICA DE ARCHIVOS ---
+files_rep_list = get_files_from_folder(DIR_REPORTES)
+files_mon_list = get_files_from_folder(DIR_MONITOR)
 
-# --- BARRA LATERAL (DIAGNÓSTICO AVANZADO) ---
+# --- PANEL LATERAL DIAGNÓSTICO ---
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
-    with c2: st.title("SITRANS")
+    with c2:
+        try: st.image("Logo.png", use_container_width=True)
+        except: st.title("SITRANS")
     
     st.write("---")
-    st.subheader("🔍 Estado de Carpetas (OneDrive)")
+    st.info(f"📂 **Ubicación del Script**")
+    # Mostramos dónde cree Python que está
+    st.caption(f"{BASE_DIR}")
     
-    if BASE_PATH.exists():
-        st.success("✅ Ruta Base OK")
-        
-        # Diagnóstico Carpeta 1
-        if DIR_REPORTES.exists():
-            st.success(f"✅ Carpeta 1_Reporte OK")
-            if len(files_rep_list) > 0:
-                st.info(f"📂 {len(files_rep_list)} archivos Excel detectados.")
-            else:
-                st.error("⚠️ La carpeta existe pero Python ve 0 Excels.")
-                st.write("Archivos crudos vistos:", [f.name for f in DIR_REPORTES.iterdir()])
-        else:
-            st.error(f"❌ No encuentro: {DIR_REPORTES.name}")
-
-        # Diagnóstico Carpeta 2
-        st.write("---")
-        if DIR_MONITOR.exists():
-            st.success(f"✅ Carpeta 2_Monitor OK")
-            if len(files_mon_list) > 0:
-                st.info(f"📂 {len(files_mon_list)} archivos Excel detectados.")
-            else:
-                st.warning("⚠️ Carpeta vacía.")
-        else:
-            st.error(f"❌ No encuentro: {DIR_MONITOR.name}")
-
+    if len(files_rep_list) > 0:
+        st.success(f"✅ Reportes: {len(files_rep_list)} archivos")
     else:
-        st.error("❌ Error Crítico: No encuentro la carpeta Control Operaciones.")
+        st.error(f"❌ No se ven archivos en: 1_Reporte")
+        
+    if len(files_mon_list) > 0:
+        st.success(f"✅ Monitores: {len(files_mon_list)} archivos")
+    else:
+        st.warning(f"⚠️ No se ven archivos en: 2_Monitor")
     
-    st.write("---")
-    if st.button("🔄 Refrescar"):
+    if st.button("🔄 Refrescar Datos"):
         st.cache_data.clear()
         st.rerun()
-        
+    
+    st.write("---")
     if st.button("🗑️ Borrar Historial"):
-        if ARCHIVO_MAESTRO.exists():
-            try: os.remove(ARCHIVO_MAESTRO); st.rerun()
-            except: pass
+        if os.path.exists(ARCHIVO_MAESTRO):
+            try: os.remove(ARCHIVO_MAESTRO); st.success("Borrado!"); st.rerun()
+            except: st.error("Error al borrar")
 
-# --- INTERFAZ PRINCIPAL ---
-UMBRALES_SEMAFORO = {
-    "Conexión a Stacking":       [15, 30],  
-    "Desconexión para Embarque": [15, 30],
-    "Conexión OnBoard":          [15, 30]   
-}
-
-st.markdown("""
-    <style>
-    .stApp { background-color: #ffffff !important; color: #333333; }
-    .header-data-box {
-        background-color: white; padding: 20px; border-radius: 12px;
-        border-left: 6px solid #003366; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        margin-bottom: 25px; display: flex; justify-content: space-around;
-        align-items: center; border: 1px solid #f0f0f0;
-    }
-    .header-item { text-align: center; }
-    .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
-    .header-value { font-size: 20px; font-weight: 700; color: #003366; }
-    .metric-card {
-        background-color: white; border: 1px solid #e0e0e0; border-radius: 12px;
-        padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        height: 100px; display: flex; flex-direction: column; justify-content: center;
-        align-items: center; margin-bottom: 10px;
-    }
-    .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
-    .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
-    .alert-box {
-        padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: center;
-        font-weight: 600; font-size: 14px; display: flex; align-items: center;
-        justify-content: center; gap: 10px;
-    }
-    .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
-    .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
-    </style>
-    """, unsafe_allow_html=True)
-
-if files_rep_list and files_mon_list:
+# --- LÓGICA PRINCIPAL ---
+if len(files_rep_list) > 0:
     df_master = procesar_datos_completos(files_rep_list, files_mon_list)
 
     if df_master is not None:
@@ -313,7 +269,14 @@ if files_rep_list and files_mon_list:
             "Conexión OnBoard": "Conectado a Bordo"
         }
 
-        ahora = pd.Timestamp.now()
+        ahora = pd.Timestamp.now() 
+
+        # --- UMBRALES ---
+        UMBRALES_SEMAFORO = {
+            "Conexión a Stacking":       [15, 30],  
+            "Desconexión para Embarque": [15, 30],
+            "Conexión OnBoard":          [15, 30]   
+        }
 
         # --- CÁLCULO DE ESTADOS ---
         for proceso, cols in parejas.items():
@@ -468,7 +431,6 @@ if files_rep_list and files_mon_list:
         render_tab(tab3, "Conexión OnBoard")
 
         st.divider()
-        import io
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
