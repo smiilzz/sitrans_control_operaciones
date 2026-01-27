@@ -18,71 +18,38 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🔧 CONFIGURACIÓN DE RUTA (CRÍTICO)
+# 🔧 RUTA BASE (Ya confirmamos que esta es correcta)
 # ==========================================
-# Esta ruta debe ser EXACTA. Si tienes dudas, ve a la carpeta en Windows,
-# haz clic en la barra de dirección arriba, copia y pega aquí.
 BASE_DIR = r"C:\Users\reefertpsv\OneDrive - Universidad Técnica Federico Santa María\Control Operaciones"
 
-# Rutas derivadas
-DIR_REPORTES = os.path.join(BASE_DIR, "1_Reporte")
-DIR_MONITOR = os.path.join(BASE_DIR, "2_Monitor")
+# --- FUNCIÓN: DETECTOR INTELIGENTE DE CARPETAS ---
+def encontrar_carpeta_inteligente(base, prefijo):
+    """Busca una carpeta que empiece con el prefijo (ej: '1_')"""
+    if not os.path.exists(base): return None
+    
+    # Listar todo lo que hay en la carpeta base
+    items = os.listdir(base)
+    for item in items:
+        # Si es una carpeta y empieza con el prefijo...
+        if os.path.isdir(os.path.join(base, item)) and item.startswith(prefijo):
+            return os.path.join(base, item) # ¡Encontrada!
+    return None
+
+# Buscamos las carpetas automáticamente
+DIR_REPORTES = encontrar_carpeta_inteligente(BASE_DIR, "1_")
+DIR_MONITOR = encontrar_carpeta_inteligente(BASE_DIR, "2_")
 ARCHIVO_MAESTRO = os.path.join(BASE_DIR, "monitor_maestro_acumulado.xlsx")
 
-# Crear carpetas si no existen (solo por seguridad)
-for d in [DIR_REPORTES, DIR_MONITOR]:
-    if not os.path.exists(d):
-        try: os.makedirs(d)
-        except: pass
-
-# --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
-UMBRALES_SEMAFORO = {
-    "Conexión a Stacking":       [15, 30],  
-    "Desconexión para Embarque": [15, 30],
-    "Conexión OnBoard":          [15, 30]   
-}
-
-# --- CSS VISUAL (ESTÉTICA) ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #ffffff !important; color: #333333; }
-    .header-data-box {
-        background-color: white; padding: 20px; border-radius: 12px;
-        border-left: 6px solid #003366; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        margin-bottom: 25px; display: flex; justify-content: space-around;
-        align-items: center; border: 1px solid #f0f0f0;
-    }
-    .header-item { text-align: center; }
-    .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
-    .header-value { font-size: 20px; font-weight: 700; color: #003366; }
-    .metric-card {
-        background-color: white; border: 1px solid #e0e0e0; border-radius: 12px;
-        padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        height: 100px; display: flex; flex-direction: column; justify-content: center;
-        align-items: center; margin-bottom: 10px;
-    }
-    .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
-    .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
-    .alert-box {
-        padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: center;
-        font-weight: 600; font-size: 14px; display: flex; align-items: center;
-        justify-content: center; gap: 10px;
-    }
-    .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
-    .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- FUNCIONES LÓGICA MONITOR ---
+# --- FUNCIONES SOPORTE ---
 COLS_SENSORES = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
 
 def get_files_from_folder(folder):
-    """Busca archivos .xls y .xlsx en la carpeta dada"""
+    """Busca archivos ignorando mayúsculas/minúsculas"""
     files = []
-    if os.path.exists(folder):
-        # Buscamos minúsculas y mayúsculas
+    if folder and os.path.exists(folder):
         files.extend(glob.glob(os.path.join(folder, "*.xls")))
         files.extend(glob.glob(os.path.join(folder, "*.xlsx")))
+        # Soporte para extensiones en mayúscula
         files.extend(glob.glob(os.path.join(folder, "*.XLS")))
         files.extend(glob.glob(os.path.join(folder, "*.XLSX")))
     return list(set(files))
@@ -126,7 +93,6 @@ def cargar_excel(file_path, palabra_clave):
             vals = [str(v).strip().upper() for v in row]
             if palabra_clave in vals:
                 df = pd.read_excel(file_path, header=i)
-                # Limpiar columnas duplicadas (.1, .2)
                 cols = pd.Series(df.columns)
                 for c_idx, col in enumerate(df.columns):
                     col_str = str(col).strip().upper()
@@ -150,7 +116,6 @@ def limpiar_y_unificar_columnas(df):
     return df
 
 def procesar_batch_monitores(lista_rutas_archivos):
-    # Cargar maestro si existe
     if os.path.exists(ARCHIVO_MAESTRO):
         try:
             df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
@@ -164,16 +129,12 @@ def procesar_batch_monitores(lista_rutas_archivos):
         try:
             df_nuevo = pd.read_excel(ruta_archivo, header=3)
             df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
-            
-            if 'UNIDAD' not in df_nuevo.columns:
-                continue
-
+            if 'UNIDAD' not in df_nuevo.columns: continue
             df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
             df_nuevo = df_nuevo.set_index('UNIDAD')
             
             if df_maestro.empty: df_maestro = df_nuevo
             else: df_maestro = df_nuevo.combine_first(df_maestro)
-                
         except Exception as e:
             st.error(f"Error procesando {os.path.basename(ruta_archivo)}: {e}")
 
@@ -193,8 +154,7 @@ def procesar_batch_monitores(lista_rutas_archivos):
         df_guardar = df_maestro.reset_index()
         df_guardar.to_excel(ARCHIVO_MAESTRO, index=False)
         return df_guardar
-    except Exception as e:
-        return df_maestro.reset_index()
+    except: return df_maestro.reset_index()
 
 @st.cache_data(show_spinner="Procesando datos...")
 def procesar_datos_completos(files_rep_list, files_mon_list):
@@ -216,7 +176,7 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
     
     df_mon_data = procesar_batch_monitores(files_mon_list)
     if df_mon_data is None: 
-        st.warning("No hay datos de monitores procesables.")
+        st.warning("⚠️ No se pudieron procesar los datos de monitores.")
         return None
     
     df_master = pd.merge(df_rep, df_mon_data, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
@@ -236,48 +196,94 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
 files_rep_list = get_files_from_folder(DIR_REPORTES)
 files_mon_list = get_files_from_folder(DIR_MONITOR)
 
-# --- BARRA LATERAL (DIAGNÓSTICO Y CONTROL) ---
+# --- BARRA LATERAL (DIAGNÓSTICO AVANZADO) ---
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
-    with c2:
-        try: st.image("Logo.png", use_container_width=True)
-        except: st.title("SITRANS")
+    with c2: st.title("SITRANS")
     
     st.write("---")
-    st.subheader("🛠️ Estado del Sistema")
+    st.subheader("🔍 Estado de Carpetas")
     
-    # DIAGNÓSTICO DE RUTAS
     if os.path.exists(BASE_DIR):
         st.success("✅ Ruta Base OK")
-    else:
-        st.error(f"❌ Ruta Base NO ENCONTRADA:\n{BASE_DIR}")
         
-    if len(files_rep_list) > 0:
-        st.success(f"📂 Reportes: {len(files_rep_list)}")
-    else:
-        st.warning("⚠️ Carpeta '1_Reporte' vacía o ruta incorrecta")
+        # Diagnóstico Carpeta 1
+        if DIR_REPORTES:
+            nombre_real_1 = os.path.basename(DIR_REPORTES)
+            st.success(f"✅ Carpeta detectada: **{nombre_real_1}**")
+            if len(files_rep_list) > 0:
+                st.info(f"📂 {len(files_rep_list)} archivos Excel listos.")
+            else:
+                st.warning("⚠️ La carpeta existe pero no tiene Excels (.xls/.xlsx)")
+                st.write(f"Contenido real: {os.listdir(DIR_REPORTES)}")
+        else:
+            st.error("❌ No encontré ninguna carpeta que empiece con '1_'")
+            st.write("Carpetas disponibles:", os.listdir(BASE_DIR))
 
-    if len(files_mon_list) > 0:
-        st.success(f"📂 Monitores: {len(files_mon_list)}")
+        # Diagnóstico Carpeta 2
+        st.write("---")
+        if DIR_MONITOR:
+            nombre_real_2 = os.path.basename(DIR_MONITOR)
+            st.success(f"✅ Carpeta detectada: **{nombre_real_2}**")
+            if len(files_mon_list) > 0:
+                st.info(f"📂 {len(files_mon_list)} archivos Excel listos.")
+            else:
+                st.warning("⚠️ La carpeta existe pero no tiene Excels.")
+        else:
+            st.error("❌ No encontré ninguna carpeta que empiece con '2_'")
+
     else:
-        st.warning("⚠️ Carpeta '2_Monitor' vacía o ruta incorrecta")
+        st.error("❌ Error Crítico: No encuentro la carpeta Control Operaciones.")
     
     st.write("---")
-    if st.button("🔄 Refrescar Datos"):
+    if st.button("🔄 Refrescar"):
         st.cache_data.clear()
         st.rerun()
-    
+        
     if st.button("🗑️ Borrar Historial"):
         if os.path.exists(ARCHIVO_MAESTRO):
-            try:
-                os.remove(ARCHIVO_MAESTRO)
-                st.success("Historial borrado.")
-                time.sleep(1)
-                st.rerun()
-            except: st.error("Error borrando.")
-        else: st.info("No hay historial.")
+            try: os.remove(ARCHIVO_MAESTRO); st.rerun()
+            except: pass
 
-# --- LÓGICA PRINCIPAL ---
+# --- INTERFAZ PRINCIPAL ---
+# --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
+UMBRALES_SEMAFORO = {
+    "Conexión a Stacking":       [15, 30],  
+    "Desconexión para Embarque": [15, 30],
+    "Conexión OnBoard":          [15, 30]   
+}
+
+# --- CSS VISUAL (ESTÉTICA) ---
+st.markdown("""
+    <style>
+    .stApp { background-color: #ffffff !important; color: #333333; }
+    .header-data-box {
+        background-color: white; padding: 20px; border-radius: 12px;
+        border-left: 6px solid #003366; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        margin-bottom: 25px; display: flex; justify-content: space-around;
+        align-items: center; border: 1px solid #f0f0f0;
+    }
+    .header-item { text-align: center; }
+    .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
+    .header-value { font-size: 20px; font-weight: 700; color: #003366; }
+    .metric-card {
+        background-color: white; border: 1px solid #e0e0e0; border-radius: 12px;
+        padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        height: 100px; display: flex; flex-direction: column; justify-content: center;
+        align-items: center; margin-bottom: 10px;
+    }
+    .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
+    .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
+    .alert-box {
+        padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: center;
+        font-weight: 600; font-size: 14px; display: flex; align-items: center;
+        justify-content: center; gap: 10px;
+    }
+    .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
+    .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
+    </style>
+    """, unsafe_allow_html=True)
+
 if files_rep_list and files_mon_list:
     df_master = procesar_datos_completos(files_rep_list, files_mon_list)
 
@@ -320,7 +326,7 @@ if files_rep_list and files_mon_list:
             "Conexión OnBoard": "Conectado a Bordo"
         }
 
-        ahora = pd.Timestamp.now() # Fecha local simple
+        ahora = pd.Timestamp.now()
 
         # --- CÁLCULO DE ESTADOS ---
         for proceso, cols in parejas.items():
