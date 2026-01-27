@@ -14,24 +14,26 @@ st.set_page_config(
     page_title="Sitrans Control Operaciones", 
     layout="wide", 
     page_icon="🚢",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# --- CONFIGURACIÓN DE RUTAS ---
-# Ruta Base (Raíz)
+# ==========================================
+# 🔧 CONFIGURACIÓN DE RUTA (CRÍTICO)
+# ==========================================
+# Esta ruta debe ser EXACTA. Si tienes dudas, ve a la carpeta en Windows,
+# haz clic en la barra de dirección arriba, copia y pega aquí.
 BASE_DIR = r"C:\Users\reefertpsv\OneDrive - Universidad Técnica Federico Santa María\Control Operaciones"
 
-# Carpetas de Entrada (Donde el robot deja los archivos LISTOS)
+# Rutas derivadas
 DIR_REPORTES = os.path.join(BASE_DIR, "1_Reporte")
 DIR_MONITOR = os.path.join(BASE_DIR, "2_Monitor")
-
-# El Archivo Maestro (Historial) se guardará en la RAÍZ para no mezclarlo
 ARCHIVO_MAESTRO = os.path.join(BASE_DIR, "monitor_maestro_acumulado.xlsx")
 
-# Crear carpetas si no existen (solo las necesarias para el dashboard)
+# Crear carpetas si no existen (solo por seguridad)
 for d in [DIR_REPORTES, DIR_MONITOR]:
     if not os.path.exists(d):
-        os.makedirs(d)
+        try: os.makedirs(d)
+        except: pass
 
 # --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
 UMBRALES_SEMAFORO = {
@@ -44,114 +46,46 @@ UMBRALES_SEMAFORO = {
 st.markdown("""
     <style>
     .stApp { background-color: #ffffff !important; color: #333333; }
-    .block-container { padding-top: 1rem !important; }
-    
     .header-data-box {
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        border-left: 6px solid #003366; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        margin-bottom: 25px;
-        display: flex;
-        justify-content: space-around;
-        align-items: center;
-        border: 1px solid #f0f0f0;
+        background-color: white; padding: 20px; border-radius: 12px;
+        border-left: 6px solid #003366; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        margin-bottom: 25px; display: flex; justify-content: space-around;
+        align-items: center; border: 1px solid #f0f0f0;
     }
     .header-item { text-align: center; }
     .header-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;}
     .header-value { font-size: 20px; font-weight: 700; color: #003366; }
-    
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        background-color: #f8f9fa;
-        border-radius: 6px;
-        border: 1px solid #e9ecef;
-        padding: 0 20px;
-        font-weight: 600;
-        color: #6c757d;
-        transition: all 0.2s;
-    }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #e3f2fd !important;
-        color: #003366 !important;
-        border: 1px solid #003366;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
     .metric-card {
-        background-color: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 12px;
-        padding: 15px;
-        text-align: center;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        height: 100px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 10px;
+        background-color: white; border: 1px solid #e0e0e0; border-radius: 12px;
+        padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        height: 100px; display: flex; flex-direction: column; justify-content: center;
+        align-items: center; margin-bottom: 10px;
     }
     .metric-val { font-size: 24px; font-weight: 700; color: #003366; }
     .metric-lbl { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase;}
-    
     .alert-box {
-        padding: 12px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        text-align: center;
-        font-weight: 600;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
+        padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: center;
+        font-weight: 600; font-size: 14px; display: flex; align-items: center;
+        justify-content: center; gap: 10px;
     }
     .alert-red { background-color: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     .alert-green { background-color: #f0fff4; color: #2f855a; border: 1px solid #9ae6b4; }
-    
-    div[role="radiogroup"] {
-        background-color: white;
-        padding: 4px; 
-        border-radius: 12px;
-        border: 1px solid #e0e0e0;
-        display: flex;
-        justify-content: space-between;
-        width: 100%;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-    }
-    div[role="radiogroup"] label {
-        flex-grow: 1;
-        text-align: center;
-        margin: 0 2px;
-        border-radius: 8px;
-        padding: 6px 8px;
-        font-weight: 500;
-        border: 1px solid transparent;
-        transition: all 0.2s;
-        font-size: 14px;
-    }
-    div[role="radiogroup"] label:hover {
-        background-color: #f8f9fa;
-        border-color: #dee2e6;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN LÓGICA MONITOR ---
+# --- FUNCIONES LÓGICA MONITOR ---
 COLS_SENSORES = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
 
-# --- FUNCIONES SOPORTE ---
 def get_files_from_folder(folder):
     """Busca archivos .xls y .xlsx en la carpeta dada"""
-    extensions = ['*.xls', '*.xlsx']
     files = []
     if os.path.exists(folder):
-        for ext in extensions:
-            files.extend(glob.glob(os.path.join(folder, ext)))
-    return files
+        # Buscamos minúsculas y mayúsculas
+        files.extend(glob.glob(os.path.join(folder, "*.xls")))
+        files.extend(glob.glob(os.path.join(folder, "*.xlsx")))
+        files.extend(glob.glob(os.path.join(folder, "*.XLS")))
+        files.extend(glob.glob(os.path.join(folder, "*.XLSX")))
+    return list(set(files))
 
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
@@ -192,6 +126,7 @@ def cargar_excel(file_path, palabra_clave):
             vals = [str(v).strip().upper() for v in row]
             if palabra_clave in vals:
                 df = pd.read_excel(file_path, header=i)
+                # Limpiar columnas duplicadas (.1, .2)
                 cols = pd.Series(df.columns)
                 for c_idx, col in enumerate(df.columns):
                     col_str = str(col).strip().upper()
@@ -203,8 +138,6 @@ def cargar_excel(file_path, palabra_clave):
                 return df
         return None
     except: return None
-
-# --- FUNCIONES LÓGICA MONITOR ---
 
 def limpiar_y_unificar_columnas(df):
     df.columns = df.columns.str.strip().str.upper()
@@ -229,12 +162,10 @@ def procesar_batch_monitores(lista_rutas_archivos):
 
     for ruta_archivo in lista_rutas_archivos:
         try:
-            # header=3 porque el archivo Monitor original tiene los datos en fila 4
             df_nuevo = pd.read_excel(ruta_archivo, header=3)
             df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
             
             if 'UNIDAD' not in df_nuevo.columns:
-                st.warning(f"Archivo ignorado: No se encontró 'UNIDAD' en {os.path.basename(ruta_archivo)}")
                 continue
 
             df_nuevo = df_nuevo.drop_duplicates(subset=['UNIDAD'])
@@ -263,7 +194,6 @@ def procesar_batch_monitores(lista_rutas_archivos):
         df_guardar.to_excel(ARCHIVO_MAESTRO, index=False)
         return df_guardar
     except Exception as e:
-        st.warning(f"No se pudo guardar historial: {e}")
         return df_maestro.reset_index()
 
 @st.cache_data(show_spinner="Procesando datos...")
@@ -286,7 +216,7 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
     
     df_mon_data = procesar_batch_monitores(files_mon_list)
     if df_mon_data is None: 
-        st.warning("No se pudo procesar ningún archivo monitor válido.")
+        st.warning("No hay datos de monitores procesables.")
         return None
     
     df_master = pd.merge(df_rep, df_mon_data, left_on="CONTENEDOR", right_on="UNIDAD", how="left")
@@ -306,7 +236,7 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
 files_rep_list = get_files_from_folder(DIR_REPORTES)
 files_mon_list = get_files_from_folder(DIR_MONITOR)
 
-# --- INTERFAZ ---
+# --- BARRA LATERAL (DIAGNÓSTICO Y CONTROL) ---
 with st.sidebar:
     c1, c2, c3 = st.columns([1, 4, 1]) 
     with c2:
@@ -314,36 +244,48 @@ with st.sidebar:
         except: st.title("SITRANS")
     
     st.write("---")
-    st.info(f"📂 **Modo Automático**")
-    st.caption(f"Reportes encontrados: {len(files_rep_list)}")
-    st.caption(f"Monitores encontrados: {len(files_mon_list)}")
+    st.subheader("🛠️ Estado del Sistema")
     
+    # DIAGNÓSTICO DE RUTAS
+    if os.path.exists(BASE_DIR):
+        st.success("✅ Ruta Base OK")
+    else:
+        st.error(f"❌ Ruta Base NO ENCONTRADA:\n{BASE_DIR}")
+        
+    if len(files_rep_list) > 0:
+        st.success(f"📂 Reportes: {len(files_rep_list)}")
+    else:
+        st.warning("⚠️ Carpeta '1_Reporte' vacía o ruta incorrecta")
+
+    if len(files_mon_list) > 0:
+        st.success(f"📂 Monitores: {len(files_mon_list)}")
+    else:
+        st.warning("⚠️ Carpeta '2_Monitor' vacía o ruta incorrecta")
+    
+    st.write("---")
     if st.button("🔄 Refrescar Datos"):
         st.cache_data.clear()
         st.rerun()
-
-    st.write("---")
     
-    if st.button("Borrar Historial Monitor"):
+    if st.button("🗑️ Borrar Historial"):
         if os.path.exists(ARCHIVO_MAESTRO):
             try:
                 os.remove(ARCHIVO_MAESTRO)
                 st.success("Historial borrado.")
                 time.sleep(1)
                 st.rerun()
-            except Exception as e:
-                st.error(f"No se pudo borrar: {e}")
+            except: st.error("Error borrando.")
         else: st.info("No hay historial.")
 
+# --- LÓGICA PRINCIPAL ---
 if files_rep_list and files_mon_list:
     df_master = procesar_datos_completos(files_rep_list, files_mon_list)
 
     if df_master is not None:
-        # --- ETIQUETA COMBINADA ---
+        # Etiqueta combinada
         df_master['ROTACION_LABEL'] = df_master['ROTACION_DETECTADA'].astype(str) + " - " + df_master['NAVE_DETECTADA'].astype(str)
 
         c_head_izq, c_head_der = st.columns([3, 1])
-        
         opciones_rot = df_master['ROTACION_LABEL'].unique()
         
         with c_head_der:
@@ -378,7 +320,7 @@ if files_rep_list and files_mon_list:
             "Conexión OnBoard": "Conectado a Bordo"
         }
 
-        ahora = pd.Timestamp.now(tz='America/Santiago').tz_localize(None)
+        ahora = pd.Timestamp.now() # Fecha local simple
 
         # --- CÁLCULO DE ESTADOS ---
         for proceso, cols in parejas.items():
@@ -439,22 +381,14 @@ if files_rep_list and files_mon_list:
                     label_amarillo = f"Amarillo: {lim_verde}-{lim_amarillo}m"
                     label_rojo = f"Rojo: >{lim_amarillo}m"
 
-                    legend_map = {
-                        'Verde': label_verde,
-                        'Amarillo': label_amarillo,
-                        'Rojo': label_rojo
-                    }
+                    legend_map = {'Verde': label_verde, 'Amarillo': label_amarillo, 'Rojo': label_rojo}
                     conteos['Color'] = conteos['Color'].map(legend_map)
                     
                     orden_fijo = [label_verde, label_amarillo, label_rojo]
                     conteos['Color'] = pd.Categorical(conteos['Color'], categories=orden_fijo, ordered=True)
                     conteos = conteos.sort_values('Color')
 
-                    new_color_map = {
-                        label_verde: '#2ecc71',
-                        label_amarillo: '#ffc107',
-                        label_rojo: '#dc3545'
-                    }
+                    new_color_map = {label_verde: '#2ecc71', label_amarillo: '#ffc107', label_rojo: '#dc3545'}
 
                 if not df_activo.empty:
                     if proceso == "Conexión OnBoard": 
@@ -471,41 +405,21 @@ if files_rep_list and files_mon_list:
                     k1, k2, k3 = st.columns([1, 1, 1], gap="medium")
 
                     with k1: 
-                        st.subheader("🚦 Distribución Contenedores")
+                        st.subheader("🚦 Distribución")
                         fig = px.pie(conteos, values='Cantidad', names='Color', 
                                      color='Color', color_discrete_map=new_color_map, hole=0.6)
                         fig.update_layout(showlegend=True, margin=dict(t=20,b=20,l=20,r=20), height=230, legend=dict(orientation="h", y=-0.2))
                         st.plotly_chart(fig, use_container_width=True, key=f"pie_{proceso}")
 
                     with k2:
-                        st.subheader("🕜 Cumplimiento KPI")
+                        st.subheader("🕜 Cumplimiento")
                         color_texto = "#28a745" if pct >= 66.6 else "#ffc107" if pct >= 33.3 else "#dc3545"
-                        
                         fig_gauge = go.Figure(go.Indicator(
-                            mode = "gauge+number",
-                            value = pct,
-                            number = {
-                                'suffix': "%", 
-                                'valueformat': ".1f",
-                                'font': {'size': 38, 'weight': 'bold', 'color': color_texto}
-                            },
-                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            mode = "gauge+number", value = pct,
+                            number = {'suffix': "%", 'valueformat': ".1f", 'font': {'size': 38, 'weight': 'bold', 'color': color_texto}},
                             gauge = {
-                                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                                'bar': {'color': "rgba(0,0,0,0)"},
-                                'bgcolor': "white",
-                                'borderwidth': 2,
-                                'bordercolor': "#f0f0f0",
-                                'steps': [
-                                    {'range': [0, 33.33], 'color': "#dc3545"},
-                                    {'range': [33.33, 66.66], 'color': "#ffc107"},
-                                    {'range': [66.66, 100], 'color': "#28a745"}
-                                ],
-                                'threshold': {
-                                    'line': {'color': "black", 'width': 12}, 
-                                    'thickness': 0.8,
-                                    'value': pct
-                                }
+                                'axis': {'range': [0, 100]}, 'bar': {'color': "rgba(0,0,0,0)"},
+                                'steps': [{'range': [0, 33], 'color': "#dc3545"}, {'range': [33, 66], 'color': "#ffc107"}, {'range': [66, 100], 'color': "#28a745"}],
                             }
                         ))
                         fig_gauge.update_layout(height=230, margin=dict(t=20, b=20, l=45, r=45))
@@ -513,31 +427,18 @@ if files_rep_list and files_mon_list:
 
                     with k3:
                         st.subheader("📊 Métricas")
-                        if proceso == "Conexión OnBoard":
-                            prom_global = df_activo[col_min].mean()
-                            rojos_total = len(df_activo[~df_activo['Cumple']])
-                            if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Fuera de Plazo</div>""", unsafe_allow_html=True)
-                            else: st.markdown(f"""<div class="alert-box alert-green">✅ Todo al día</div>""", unsafe_allow_html=True)
-                            st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Total</div></div>""", unsafe_allow_html=True)
-                        else:
-                            rojos_ct = len(df_activo[(df_activo['TIPO']=='CT') & (~df_activo['Cumple'])])
-                            prom_c = df_activo[df_activo['TIPO']=='CT'][col_min].mean()
-                            prom_g = df_activo[df_activo['TIPO']=='General'][col_min].mean()
-
-                            if rojos_ct > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_ct} CT Fuera Plazo</div>""", unsafe_allow_html=True)
-                            else: st.markdown(f"""<div class="alert-box alert-green">✅ CT al día</div>""", unsafe_allow_html=True)
-                            
-                            p1, p2 = st.columns(2)
-                            with p1: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_g:.1f} m</div><div class="metric-lbl">Prom. Gen</div></div>""", unsafe_allow_html=True)
-                            with p2: st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_c:.1f} m</div><div class="metric-lbl">Prom. CT</div></div>""", unsafe_allow_html=True)
-
+                        prom_global = df_activo[col_min].mean()
+                        rojos_total = len(df_activo[~df_activo['Cumple']])
+                        
+                        if rojos_total > 0: st.markdown(f"""<div class="alert-box alert-red">🚨 {rojos_total} Atrasados</div>""", unsafe_allow_html=True)
+                        else: st.markdown(f"""<div class="alert-box alert-green">✅ Todo al día</div>""", unsafe_allow_html=True)
+                        st.markdown(f"""<div class="metric-card"><div class="metric-val">{prom_global:.1f} min</div><div class="metric-lbl">Promedio Total</div></div>""", unsafe_allow_html=True)
                 else:
                     st.info(f"ℹ️ No hay actividad activa para {proceso}.")
 
                 st.divider()
 
                 c_filt, c_tot, c_norm, c_ct = st.columns([2, 1, 1, 1], gap="small")
-                
                 with c_filt:
                     filtro_estado = st.radio(f"f_{proceso}", ["Todos", label_fin, "Pendiente", "Sin Solicitud"], horizontal=True, label_visibility="collapsed", key=proceso)
                 
@@ -545,15 +446,13 @@ if files_rep_list and files_mon_list:
                 else: df_show = df[df[col_stat] == filtro_estado].copy()
                 
                 busqueda = st.text_input(f"🔍 Buscar Contenedor:", placeholder="Ej: TRHU o 123...", key=f"search_{proceso}", label_visibility="collapsed")
-                
                 if busqueda:
                     termino = busqueda.strip()
                     df_show = df_show[df_show['CONTENEDOR'].astype(str).str.contains(termino, case=False, na=False)]
 
-                c_tot.metric("Total Contenedores", len(df_show))
-                c_norm.metric("❄️ Normales", len(df_show[df_show['TIPO'] == 'General']))
-                c_ct.metric("⚡ CT (Reefers)", len(df_show[df_show['TIPO'] == 'CT']))
-                
+                c_tot.metric("Total", len(df_show))
+                c_norm.metric("❄️ Gen", len(df_show[df_show['TIPO'] == 'General']))
+                c_ct.metric("⚡ CT", len(df_show[df_show['TIPO'] == 'CT']))
                 st.write("")
 
                 def pintar(row):
@@ -568,8 +467,8 @@ if files_rep_list and files_mon_list:
 
                 cols_ver = ['CONTENEDOR', 'TIPO', f"Ver_Tiempo_{proceso}", col_stat, f"Ver_Trans_{proceso}"]
                 df_dsp = df_show[cols_ver].copy()
-                df_dsp.columns = ['Contenedor', 'Tipo', 'Tiempo', 'Estado', 'Minutos Transcurridos']
-                st.dataframe(df_dsp.style.apply(pintar, axis=1).format({"Minutos Transcurridos": "{:.1f}"}), use_container_width=True, height=400)
+                df_dsp.columns = ['Contenedor', 'Tipo', 'Tiempo', 'Estado', 'Minutos']
+                st.dataframe(df_dsp.style.apply(pintar, axis=1).format({"Minutos": "{:.1f}"}), use_container_width=True, height=400)
 
         render_tab(tab1, "Conexión a Stacking")
         render_tab(tab2, "Desconexión para Embarque")
@@ -587,7 +486,6 @@ if files_rep_list and files_mon_list:
         )
 
     else:
-        st.error("Error al procesar archivos. Revisa las carpetas locales.")
+        st.error("Error crítico: No se pudieron procesar los datos.")
 else:
-    st.info("Esperando que el robot descargue archivos en las carpetas...")
-    st.caption(f"Ruta monitoreada: {BASE_DIR}")
+    st.info("Esperando archivos... Revisa el panel de la izquierda.")
