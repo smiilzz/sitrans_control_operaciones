@@ -1,13 +1,11 @@
 import streamlit as st
 import pandas as pd
-import io
-import re
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-import glob
-import time
+import re
+from pathlib import Path # <--- Esta es la clave para que funcionen las tildes
 
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(
@@ -18,41 +16,34 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🔧 RUTA BASE (Ya confirmamos que esta es correcta)
+# 🔧 RUTA BASE (ONEDRIVE)
 # ==========================================
-BASE_DIR = r"C:\Users\reefertpsv\OneDrive - Universidad Técnica Federico Santa María\Control Operaciones"
+# Usamos Path() para que Python entienda las tildes y espacios
+BASE_PATH = Path(r"C:\Users\reefertpsv\OneDrive - Universidad Técnica Federico Santa María\Control Operaciones")
 
-# --- FUNCIÓN: DETECTOR INTELIGENTE DE CARPETAS ---
-def encontrar_carpeta_inteligente(base, prefijo):
-    """Busca una carpeta que empiece con el prefijo (ej: '1_')"""
-    if not os.path.exists(base): return None
-    
-    # Listar todo lo que hay en la carpeta base
-    items = os.listdir(base)
-    for item in items:
-        # Si es una carpeta y empieza con el prefijo...
-        if os.path.isdir(os.path.join(base, item)) and item.startswith(prefijo):
-            return os.path.join(base, item) # ¡Encontrada!
-    return None
-
-# Buscamos las carpetas automáticamente
-DIR_REPORTES = encontrar_carpeta_inteligente(BASE_DIR, "1_")
-DIR_MONITOR = encontrar_carpeta_inteligente(BASE_DIR, "2_")
-ARCHIVO_MAESTRO = os.path.join(BASE_DIR, "monitor_maestro_acumulado.xlsx")
+# Rutas derivadas usando la lógica moderna de Path
+DIR_REPORTES = BASE_PATH / "1_Reporte"
+DIR_MONITOR = BASE_PATH / "2_Monitor"
+ARCHIVO_MAESTRO = BASE_PATH / "monitor_maestro_acumulado.xlsx"
 
 # --- FUNCIONES SOPORTE ---
 COLS_SENSORES = ['SENSOR1_TMP', 'SENSOR2_TMP', 'SENSOR3_TMP', 'SENSOR4_TMP']
 
-def get_files_from_folder(folder):
-    """Busca archivos ignorando mayúsculas/minúsculas"""
-    files = []
-    if folder and os.path.exists(folder):
-        files.extend(glob.glob(os.path.join(folder, "*.xls")))
-        files.extend(glob.glob(os.path.join(folder, "*.xlsx")))
-        # Soporte para extensiones en mayúscula
-        files.extend(glob.glob(os.path.join(folder, "*.XLS")))
-        files.extend(glob.glob(os.path.join(folder, "*.XLSX")))
-    return list(set(files))
+def get_files_robusto(folder_path):
+    """Busca archivos ignorando mayúsculas y extensiones confusas"""
+    if not folder_path.exists():
+        return []
+    
+    archivos_encontrados = []
+    # Iterar sobre TODO lo que hay en la carpeta
+    for fichero in folder_path.iterdir():
+        if fichero.is_file():
+            # Verificar si parece un Excel (ignorando mayúsculas)
+            if fichero.suffix.lower() in ['.xls', '.xlsx', '.xlsm']:
+                # Ignorar archivos temporales de Excel (~$...)
+                if not fichero.name.startswith("~$"):
+                    archivos_encontrados.append(fichero)
+    return archivos_encontrados
 
 @st.cache_data(show_spinner=False)
 def formatear_duracion(minutos):
@@ -65,6 +56,7 @@ def formatear_duracion(minutos):
 def extraer_metadatos(file_path):
     metadatos = {"Nave": "---", "Rotación": "Indefinida", "Fecha": "---"}
     try:
+        # Pandas lee el objeto Path directamente
         df_head = pd.read_excel(file_path, header=None, nrows=20)
         texto = " ".join(df_head.astype(str).stack().tolist()).upper()
         match_fecha = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}\s+\d{1,2}:\d{2})', texto)
@@ -115,8 +107,9 @@ def limpiar_y_unificar_columnas(df):
             df = df.drop(columns=[col_sufijo])
     return df
 
-def procesar_batch_monitores(lista_rutas_archivos):
-    if os.path.exists(ARCHIVO_MAESTRO):
+def procesar_batch_monitores(lista_archivos):
+    # Cargar maestro si existe
+    if ARCHIVO_MAESTRO.exists():
         try:
             df_maestro = pd.read_excel(ARCHIVO_MAESTRO)
             if 'UNIDAD' in df_maestro.columns:
@@ -125,7 +118,7 @@ def procesar_batch_monitores(lista_rutas_archivos):
         except: df_maestro = pd.DataFrame()
     else: df_maestro = pd.DataFrame()
 
-    for ruta_archivo in lista_rutas_archivos:
+    for ruta_archivo in lista_archivos:
         try:
             df_nuevo = pd.read_excel(ruta_archivo, header=3)
             df_nuevo = limpiar_y_unificar_columnas(df_nuevo)
@@ -135,8 +128,7 @@ def procesar_batch_monitores(lista_rutas_archivos):
             
             if df_maestro.empty: df_maestro = df_nuevo
             else: df_maestro = df_nuevo.combine_first(df_maestro)
-        except Exception as e:
-            st.error(f"Error procesando {os.path.basename(ruta_archivo)}: {e}")
+        except: pass
 
     if df_maestro.empty: return None
 
@@ -157,9 +149,9 @@ def procesar_batch_monitores(lista_rutas_archivos):
     except: return df_maestro.reset_index()
 
 @st.cache_data(show_spinner="Procesando datos...")
-def procesar_datos_completos(files_rep_list, files_mon_list):
+def procesar_datos_completos(files_rep, files_mon):
     lista_dfs = []
-    for archivo_rep in files_rep_list:
+    for archivo_rep in files_rep:
         meta = extraer_metadatos(archivo_rep)
         df_ind = cargar_excel(archivo_rep, "CONTENEDOR")
         if df_ind is not None:
@@ -174,7 +166,7 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
     if not lista_dfs: return None
     df_rep = pd.concat(lista_dfs, ignore_index=True)
     
-    df_mon_data = procesar_batch_monitores(files_mon_list)
+    df_mon_data = procesar_batch_monitores(files_mon)
     if df_mon_data is None: 
         st.warning("⚠️ No se pudieron procesar los datos de monitores.")
         return None
@@ -192,9 +184,9 @@ def procesar_datos_completos(files_rep_list, files_mon_list):
             df_master[col] = pd.to_datetime(df_master[col], dayfirst=True, errors='coerce')
     return df_master
 
-# --- OBTENCIÓN AUTOMÁTICA DE ARCHIVOS ---
-files_rep_list = get_files_from_folder(DIR_REPORTES)
-files_mon_list = get_files_from_folder(DIR_MONITOR)
+# --- OBTENCIÓN AUTOMÁTICA DE ARCHIVOS (USANDO PATHLIB) ---
+files_rep_list = get_files_robusto(DIR_REPORTES)
+files_mon_list = get_files_robusto(DIR_MONITOR)
 
 # --- BARRA LATERAL (DIAGNÓSTICO AVANZADO) ---
 with st.sidebar:
@@ -202,35 +194,32 @@ with st.sidebar:
     with c2: st.title("SITRANS")
     
     st.write("---")
-    st.subheader("🔍 Estado de Carpetas")
+    st.subheader("🔍 Estado de Carpetas (OneDrive)")
     
-    if os.path.exists(BASE_DIR):
+    if BASE_PATH.exists():
         st.success("✅ Ruta Base OK")
         
         # Diagnóstico Carpeta 1
-        if DIR_REPORTES:
-            nombre_real_1 = os.path.basename(DIR_REPORTES)
-            st.success(f"✅ Carpeta detectada: **{nombre_real_1}**")
+        if DIR_REPORTES.exists():
+            st.success(f"✅ Carpeta 1_Reporte OK")
             if len(files_rep_list) > 0:
-                st.info(f"📂 {len(files_rep_list)} archivos Excel listos.")
+                st.info(f"📂 {len(files_rep_list)} archivos Excel detectados.")
             else:
-                st.warning("⚠️ La carpeta existe pero no tiene Excels (.xls/.xlsx)")
-                st.write(f"Contenido real: {os.listdir(DIR_REPORTES)}")
+                st.error("⚠️ La carpeta existe pero Python ve 0 Excels.")
+                st.write("Archivos crudos vistos:", [f.name for f in DIR_REPORTES.iterdir()])
         else:
-            st.error("❌ No encontré ninguna carpeta que empiece con '1_'")
-            st.write("Carpetas disponibles:", os.listdir(BASE_DIR))
+            st.error(f"❌ No encuentro: {DIR_REPORTES.name}")
 
         # Diagnóstico Carpeta 2
         st.write("---")
-        if DIR_MONITOR:
-            nombre_real_2 = os.path.basename(DIR_MONITOR)
-            st.success(f"✅ Carpeta detectada: **{nombre_real_2}**")
+        if DIR_MONITOR.exists():
+            st.success(f"✅ Carpeta 2_Monitor OK")
             if len(files_mon_list) > 0:
-                st.info(f"📂 {len(files_mon_list)} archivos Excel listos.")
+                st.info(f"📂 {len(files_mon_list)} archivos Excel detectados.")
             else:
-                st.warning("⚠️ La carpeta existe pero no tiene Excels.")
+                st.warning("⚠️ Carpeta vacía.")
         else:
-            st.error("❌ No encontré ninguna carpeta que empiece con '2_'")
+            st.error(f"❌ No encuentro: {DIR_MONITOR.name}")
 
     else:
         st.error("❌ Error Crítico: No encuentro la carpeta Control Operaciones.")
@@ -241,19 +230,17 @@ with st.sidebar:
         st.rerun()
         
     if st.button("🗑️ Borrar Historial"):
-        if os.path.exists(ARCHIVO_MAESTRO):
+        if ARCHIVO_MAESTRO.exists():
             try: os.remove(ARCHIVO_MAESTRO); st.rerun()
             except: pass
 
 # --- INTERFAZ PRINCIPAL ---
-# --- CONFIGURACIÓN DE UMBRALES SEMÁFORO (MINUTOS) ---
 UMBRALES_SEMAFORO = {
     "Conexión a Stacking":       [15, 30],  
     "Desconexión para Embarque": [15, 30],
     "Conexión OnBoard":          [15, 30]   
 }
 
-# --- CSS VISUAL (ESTÉTICA) ---
 st.markdown("""
     <style>
     .stApp { background-color: #ffffff !important; color: #333333; }
@@ -481,6 +468,7 @@ if files_rep_list and files_mon_list:
         render_tab(tab3, "Conexión OnBoard")
 
         st.divider()
+        import io
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
